@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.0.3";
+const SURUM = "1.1.0";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -91,8 +91,8 @@ async function dosyaVer(ad, metin, tur) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); return "indirildi";
 }
 async function yedekGonder() {
-  const ad = `KlinikDefteri-yedek-${bugun()}.kdy`;
-  const s = await dosyaVer(ad, await yedekOlustur(), "application/octet-stream");
+  const ad = `KlinikDefteri-yedek-${bugun()}.txt`;          // 1.1.0: .txt — Android'in paylaş menüsü .kdy'yi kabul etmiyordu
+  const s = await dosyaVer(ad, await yedekOlustur(), "text/plain");
   if (s !== "vazgecildi") { await Veri.ayarYaz("sonYedek", new Date().toISOString()); toast(s === "paylasildi" ? "Yedek gönderildi" : "Yedek dosyası indirildi"); ciz(); }
 }
 
@@ -108,7 +108,7 @@ function driveGeriYukleSor(metin, sonra) {
   perde(`<h3>☁ Drive'daki yedeği geri yükle</h3><p class="kucuk">Bu telefondaki kayıtların YERİNE geçer.</p><label>Yedeğin şifresi (yedek alındığı zamanki giriş şifresi)<input class="girdi" id="dS" type="tel" inputmode="numeric" maxlength="4" style="-webkit-text-security:disc"></label><p class="hata" id="dH"></p><button class="btn ana" id="dK">Geri yükle</button><button class="btn ince" data-kapat>Vazgeç</button>`, s => {
     s.querySelector("[data-kapat]").onclick = kapat; s.querySelector("#dS").focus();
     s.querySelector("#dK").onclick = async () => { const pin = s.querySelector("#dS").value;
-      try { const y = await yedekCoz(metin, pin, Veri.ayar("google").giz); const g = Veri.ayar("google"); await Veri.iceAl(y); await Veri.ayarYaz("google", g); await Veri.ayarYaz("sonDrive", new Date().toISOString()); OTURUM.pin = pin; OTURUM.acik = true; await pinKaydet(pin); await lisansTazele(false);
+      try { const y = await yedekCoz(metin, pin, Veri.ayar("google").giz); const g = Veri.ayar("google"); await Veri.iceAl(y); stokYenile(); await Veri.ayarYaz("google", g); await Veri.ayarYaz("sonDrive", new Date().toISOString()); OTURUM.pin = pin; OTURUM.acik = true; await pinKaydet(pin); await lisansTazele(false);
         kapat(); toast(`Geri yüklendi · ${A().hasta.length} hasta, ${A().islem.length} işlem`); if (sonra) sonra(); else git("ana"); }
       catch (e) { s.querySelector("#dH").textContent = e.message; } }; });
 }
@@ -123,6 +123,45 @@ async function googleBaglan(kurulumda) {
     toast(`Bağlandı: ${r.email}${r.kodDegisti ? " · cihaz kodu Drive'dan geri geldi" : ""}`);
     await driveYedekle(false);
   } catch (e) { toast(e.message); }
+}
+
+// ---------------------------------------------------------------- ekip: birleştirme ekranları
+async function ekipAc(metin, sifre) {
+  sifre = sifre || Veri.ayar("ekipSifre");
+  let y;
+  try { if (!sifre) throw new Error("şifre"); y = await Ekip.ac(metin, sifre); }
+  catch (e) {
+    if (e.message !== "şifre" && !/şifresi yanlış/.test(e.message)) return toast(e.message);
+    return perde(`<h3>Klinik şifresi</h3><p class="kucuk">${sifre ? "Bu dosya farklı bir klinik şifresiyle kilitlenmiş." : "Dosyayı açmak için ekipte kullandığınız klinik şifresini yazın."}</p><input class="girdi" id="eS" type="text" autocomplete="off" style="-webkit-text-security:disc"><p class="hata" id="eH"></p><button class="btn koyu" id="eK">Aç</button>`, s => {
+      s.querySelector("#eS").focus();
+      s.querySelector("#eK").onclick = async () => { const v = s.querySelector("#eS").value.trim(); try { await Ekip.ac(metin, v); if (!Veri.ayar("ekipSifre")) await Veri.ayarYaz("ekipSifre", v); kapat(); ekipAc(metin, v); } catch (er) { s.querySelector("#eH").textContent = er.message; } }; });
+  }
+  if (y.cihaz && y.cihaz === Veri.ayar("cihaz")) return toast("Bu dosya bu telefondan gönderilmiş · karşı telefonun dosyasını açın");
+  const p = Ekip.plan(y), o = p.ozet, bos = !o.yeniHasta && !o.yeniIslem && !o.guncel && !o.yeniMalzeme && !o.silinen;
+  perde(`<h3>Gelen defter · ${esc(y.isletme || "ekip")}</h3><p class="kucuk">Gönderen telefon ${esc(y.cihaz || "")} · ${tr(yerel(new Date(y.tarih)))} ${saat(yerel(new Date(y.tarih)))}</p>
+    ${bos ? `<div class="kart bos-durum"><b>İki defter zaten aynı</b>Eklenecek ya da değişecek kayıt yok.</div>` : `<div class="kart ayar" style="padding:2px 14px">
+      ${[["Yeni hasta", o.yeniHasta], ["Yeni işlem", o.yeniIslem], ["Güncellenen kayıt (ödeme vb.)", o.guncel], ["Yeni malzeme", o.yeniMalzeme], ["Silinen kayıt", o.silinen]].filter(([, n]) => n).map(([t, n]) => `<div class="s"><div>${t}</div><b>${n}</b></div>`).join("")}</div>
+    <p class="kucuk">Bu telefondaki kayıtlar silinmez. Aynı kayıtlar bir kez kalır; aynı kayıt iki telefonda değiştiyse son değişiklik geçer.</p>`}
+    ${bos ? `<button class="btn ince" data-kapat>Kapat</button>` : `<button class="btn ana" id="bK">Birleştir</button><button class="btn ince" data-kapat>Vazgeç</button>`}`, s => {
+    s.querySelector("[data-kapat]").onclick = kapat;
+    const b = s.querySelector("#bK"); if (b) b.onclick = async () => {
+      b.disabled = true; b.textContent = "Birleştiriliyor…";
+      try { await Ekip.uygula(p); stokYenile(); kapat(); toast(`Birleştirildi · ${o.yeniIslem} yeni işlem, ${o.yeniHasta} yeni hasta`); ciz(); kisiCiftleri(); driveYedekle(true); }
+      catch (e) { b.disabled = false; b.textContent = "Birleştir"; toast("Birleştirilemedi: " + e.message); } };
+  });
+}
+function kisiCiftleri() {
+  const c = Ekip.ciftler(); if (!c.length) return;
+  const [a, b] = c[0];
+  const ozet = h => { const is = A().islem.filter(i => i.hastaId === h.id); return `${h.tel ? esc(h.tel) : "telefon yok"} · ${is.length} geliş${is.length ? " · son " + tr(is.map(i => i.ts).sort().pop()) : ""}${h.alerji ? " · ⚠ " + esc(h.alerji) : ""}`; };
+  perde(`<h3>Bu ikisi aynı kişi mi?</h3><p class="kucuk">İki telefonda ayrı ayrı yeni hasta olarak açılmış olabilir.${c.length > 1 ? ` (${c.length} benzer kayıt var)` : ""}</p>
+    <div class="kart liste"><div class="s" style="cursor:default"><span class="av ${renk(a.ad)}">${esc(bas(a.ad))}</span><div class="m"><b>${esc(a.ad)}</b><small>${ozet(a)}</small></div></div>
+      <div class="s" style="cursor:default"><span class="av ${renk(b.ad)}">${esc(bas(b.ad))}</span><div class="m"><b>${esc(b.ad)}</b><small>${ozet(b)}</small></div></div></div>
+    <button class="btn ana" id="kB">Aynı kişi · birleştir</button><button class="btn ince" id="kF">Farklı kişiler</button><button class="btn ince" data-kapat>Sonra</button>`, s => {
+    s.querySelector("[data-kapat]").onclick = kapat;
+    s.querySelector("#kB").onclick = async () => { const [x, y] = (a.ilk || "") <= (b.ilk || "") ? [a, b] : [b, a]; await Ekip.kisiBirlestir(x, y); kapat(); toast(`${x.ad} · kayıtlar birleştirildi`); ciz(); kisiCiftleri(); };
+    s.querySelector("#kF").onclick = async () => { await Ekip.farkli(a, b); kapat(); kisiCiftleri(); };
+  });
 }
 
 // ---------------------------------------------------------------- hesaplar
@@ -141,8 +180,16 @@ function stokUyarilari() {
   }
   return out;
 }
-async function stokDegistir(kalemler, isaret) {
-  for (const k of kalemler || []) { const m = A().malzeme.find(x => x.id === k.malId); if (m && m.stokTut) { m.stok = (+m.stok || 0) + isaret * k.adet; await Veri.kaydet("malzeme", m); } }
+// 1.1.0: stok = hareketlerin toplamı (birleştirmede iki telefonun düşüşü de doğru sayılır)
+function stokYenile() { const t = {}; for (const h of A().hareket) t[h.malId] = (t[h.malId] || 0) + (+h.n || 0); for (const m of A().malzeme) m.stok = t[m.id] || 0; }
+async function stokHareket(malId, n, tur, id) { const h = await Veri.kaydet("hareket", {id: id || "", malId, n, tur, ts: yerel(new Date()).slice(0, 19)}); stokYenile(); return h; }
+async function stokDegistir(kalemler, isaret, islemId) {
+  if (isaret > 0) { for (const h of A().hareket.filter(h => h.id.startsWith(`i:${islemId}:`))) await Veri.sil("hareket", h.id); return stokYenile(); }      // işlem silindi: düşüş geri
+  for (const [s, k] of (kalemler || []).entries()) {
+    const m = A().malzeme.find(x => x.id === k.malId); if (!m || !m.stokTut) continue;
+    await Veri.kaydet("hareket", {id: `i:${islemId}:${s}`, malId: k.malId, n: -k.adet, tur: "islem", ts: yerel(new Date()).slice(0, 19)});      // kimlik işleme ve sıraya bağlı: her telefonda aynı
+  }
+  stokYenile();
 }
 
 // ---------------------------------------------------------------- oturum, kilit, lisans
@@ -319,7 +366,7 @@ async function yeniKaydet() {
   const otom = kalemler.reduce((s, k) => s + k.adet * k.fiyat, 0);
   const i = await Veri.kaydet("islem", {hastaId: h.id, ts: yerel(new Date()).slice(0, 19), neden: YENI.neden.trim(), kalemler, toplam: YENI.tutarElle != null ? YENI.tutarElle : otom,
     odeme: YENI.odeme === "Sonra" ? "" : YENI.odeme, odendi: YENI.odeme !== "Sonra", not: YENI.not.trim()});
-  await stokDegistir(i.kalemler, -1);
+  await stokDegistir(i.kalemler, -1, i.id);
   toast(`${h.ad} · ${tl(i.toplam)} kaydedildi`); yeniSifirla(); git("hasta/" + h.id);
   driveYedekle(true);
 }
@@ -372,7 +419,7 @@ function islemDetay(iid) {
     <button class="btn ince" id="iSil" style="color:var(--tehlike)">İşlemi sil (stok geri eklenir)</button><button class="btn ince" data-kapat>Kapat</button>`, s => {
     s.querySelector("[data-kapat]").onclick = kapat;
     s.querySelectorAll("[data-od]").forEach(b => b.onclick = async () => { if (!izinVar("ödeme kaydı")) return; Object.assign(i, {odendi: true, odeme: b.dataset.od, odemeTs: yerel(new Date()).slice(0, 19)}); await Veri.kaydet("islem", i); kapat(); toast("Ödendi olarak işaretlendi"); ciz(); });
-    s.querySelector("#iSil").onclick = () => izinVar("silme") && onay("Bu işlem silinsin mi?", async () => { await stokDegistir(i.kalemler, +1); await Veri.sil("islem", i.id); toast("İşlem silindi"); ciz(); }, true);
+    s.querySelector("#iSil").onclick = () => izinVar("silme") && onay("Bu işlem silinsin mi?", async () => { await stokDegistir(i.kalemler, +1, i.id); await Veri.sil("islem", i.id); toast("İşlem silindi"); ciz(); }, true);
   });
 }
 
@@ -499,6 +546,10 @@ function ayarlarEkran() {
       <button class="s" data-git="malzeme" style="width:100%;text-align:left"><div>Malzeme ve fiyat listesi<small>${A().malzeme.length} kalem · ekle, sil, fiyat ve stok değiştir</small></div><span class="ok">›</span></button>
       <button class="s" data-a="kategori" style="width:100%;text-align:left"><div>Kategoriler<small>${gruplar().map(esc).join(" · ")}</small></div><span class="ok">›</span></button></div>
     <div class="grup">Ödeme türleri</div><div class="kart ayar" style="padding:2px 14px"><button class="s" data-a="odeme" style="width:100%;text-align:left"><div>${odemeTurleri().map(esc).join(" · ")}<small>Ekle, sil, adını değiştir</small></div><span class="ok">›</span></button></div>
+    <div class="grup">Ekip · birden fazla telefon</div><div class="kart ayar" style="padding:2px 14px">
+      <button class="s" data-a="ekipPaylas" style="width:100%;text-align:left"><div>Defteri paylaş<small>Vardiya sonunda ekip arkadaşınıza WhatsApp'tan gönderin</small></div><span class="ok">›</span></button>
+      <button class="s" data-a="ekipBirlestir" style="width:100%;text-align:left"><div>Gelen defteri birleştir<small>${(() => { const g = Object.values(Veri.ayar("ekipSon") || {}).sort((a, b) => b.t.localeCompare(a.t))[0]; return g ? "Son birleştirme " + tr(yerel(new Date(g.t))) + " " + saat(yerel(new Date(g.t))) : "Yeni kayıtlar eklenir, aynı kayıtlar bir kez kalır"; })()}</small></div><span class="ok">›</span></button>
+      <button class="s" data-a="ekipSifre" style="width:100%;text-align:left"><div>Klinik şifresi<small>${Veri.ayar("ekipSifre") ? "Belirlendi · ekipteki herkeste aynı olmalı" : "Paylaşım dosyasını korur · ekipte herkes aynısını yazar"}</small></div><span class="ok">›</span></button></div>
     <div class="grup">Güvenlik ve yedek</div><div class="kart ayar" style="padding:2px 14px">
       <button class="s" data-a="pin" style="width:100%;text-align:left"><div>Giriş şifresi<small>4 hane · ${Veri.ayar("kilitDk") || 2} dk arka planda kalınca kilitlenir</small></div><span class="ok">›</span></button>
       <button class="s" data-a="google" style="width:100%;text-align:left"><div>${googleBagli() ? "Google · " + esc(Veri.ayar("google").e) : "Google ile bağla"}<small>${googleBagli() ? (Veri.ayar("sonDrive") ? "Son Drive yedeği " + tr(yerel(new Date(Veri.ayar("sonDrive")))) + " " + saat(yerel(new Date(Veri.ayar("sonDrive")))) : "Drive'a henüz yedek gitmedi") : "Drive'a otomatik yedek · telefon değişse de kaybolmaz · isteğe bağlı"}</small></div><span class="et ${googleBagli() ? "e-iyi" : "e-ana"}">${googleBagli() ? "Bağlı" : "Bağla"}</span></button>
@@ -523,7 +574,9 @@ const BAGLA = {
       if (p1 !== p2) return h.textContent = "Şifreler aynı değil";
       await Veri.ayarYaz("isletmeAd", ad); await Veri.ayarYaz("isletmeTel", tel); await pinKaydet(p1);
       if (!A().malzeme.length) for (const [ad2, grup, satis, alis, stok, sinir, alerji] of ORNEK_MALZEME)
-        await Veri.kaydet("malzeme", {ad: ad2, grup, satis, alis, stok, sinir, skt: "", sik: SIK.includes(ad2), alerji: alerji || "", stokTut: grup !== "Hizmet" && !(stok === 0 && sinir === 0)});
+        { const m = await Veri.kaydet("malzeme", {ad: ad2, grup, satis, alis, stok, sinir, skt: "", sik: SIK.includes(ad2), alerji: alerji || "", stokTut: grup !== "Hizmet" && !(stok === 0 && sinir === 0)});
+          if (stok) await Veri.kaydet("hareket", {id: "ac:" + m.id, malId: m.id, n: stok, tur: "acilis", ts: yerel(new Date()).slice(0, 19)}); }
+      stokYenile();
       await Veri.ayarYaz("kurulum", new Date().toISOString());
       OTURUM.acik = true; OTURUM.pin = p1; await lisansTazele(true); git("malzeme"); toast("Hazır · malzeme ve fiyatlarınızı düzenleyin");
     };
@@ -580,13 +633,16 @@ const BAGLA = {
       if (!izinVar("malzeme değişikliği")) return;
       const v = k => u.querySelector("#" + k).value.trim(), ad = v("mAd");
       if (ad.length < 2) return toast("Malzeme adını yazın");
+      const hedef = Math.round(sayi(v("mStok"))), once = m ? (+m.stok || 0) : 0;
       const o = Object.assign(m || {}, {ad, grup, satis: sayi(v("mSatis")), alis: sayi(v("mAlis")), stokTut: u.querySelector("#mStokTut").classList.contains("on"),
-        stok: Math.round(sayi(v("mStok"))), sinir: Math.round(sayi(v("mSinir"))), skt: v("mSkt"), sik: u.querySelector("#mSik").classList.contains("on"), alerji: v("mAlerji")});
-      await Veri.kaydet("malzeme", o); toast("Kaydedildi"); git("malzeme");
+        sinir: Math.round(sayi(v("mSinir"))), skt: v("mSkt"), sik: u.querySelector("#mSik").classList.contains("on"), alerji: v("mAlerji")});
+      await Veri.kaydet("malzeme", o);
+      if (o.stokTut && hedef !== once) await stokHareket(o.id, hedef - once, "duzelt");          // elle yazılan stok: fark hareketi
+      stokYenile(); toast("Kaydedildi"); git("malzeme");
     };
     const gb = u.querySelector("#mGiris"); if (gb) gb.onclick = () => izinVar("stok girişi") && perde(`<h3>Stok girişi · ${esc(m.ad)}</h3><label>Gelen adet<input class="girdi" id="gA" inputmode="numeric"></label><label>Yeni alış fiyatı (isteğe bağlı)<input class="girdi" id="gF" inputmode="decimal" placeholder="${esc(m.alis || "")}"></label><button class="btn koyu" id="gK">Ekle</button>`, s => {
       s.querySelector("#gA").focus();
-      s.querySelector("#gK").onclick = async () => { const n = Math.round(sayi(s.querySelector("#gA").value)); if (!n) return toast("Adet yazın"); m.stok = (+m.stok || 0) + n; if (s.querySelector("#gF").value.trim()) m.alis = sayi(s.querySelector("#gF").value); m.stokTut = true; await Veri.kaydet("malzeme", m); kapat(); toast(`${n} adet eklendi · stok ${m.stok}`); ciz(); }; });
+      s.querySelector("#gK").onclick = async () => { const n = Math.round(sayi(s.querySelector("#gA").value)); if (!n) return toast("Adet yazın"); if (s.querySelector("#gF").value.trim()) m.alis = sayi(s.querySelector("#gF").value); if (s.querySelector("#gF").value.trim() || !m.stokTut) { m.stokTut = true; await Veri.kaydet("malzeme", m); } await stokHareket(m.id, n, "giris"); kapat(); toast(`${n} adet eklendi · stok ${m.stok}`); ciz(); }; });
     const sl = u.querySelector("#mSil"); if (sl) sl.onclick = () => izinVar("silme") && onay(`${m.ad} silinsin mi? (Eski işlemlerdeki kayıtlar durur.)`, async () => { await Veri.sil("malzeme", m.id); toast("Silindi"); git("malzeme"); }, true);
   },
   kasa(u) {
@@ -637,6 +693,27 @@ const EYLEM = {
         else if (b.id === "cK") { if (await kaydet()) { kapat(); toast("Kaydedildi"); ciz(); } } });
     });
   },
+  ekipSifre(sonra) {
+    perde(`<h3>Klinik şifresi</h3><p class="kucuk">Ekipteki herkes kendi telefonunda aynı şifreyi yazar. "Defteri paylaş" dosyası bu şifreyle kilitlenir; şifresi farklı telefon dosyayı açamaz. En az 6 karakter.</p>
+      <label>Klinik şifresi<span class="pwkutu" style="position:relative;display:block"><input class="girdi" id="eS" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" style="-webkit-text-security:disc" value="${esc(Veri.ayar("ekipSifre") || "")}"><button type="button" id="eG" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:18px">👁</button></span></label>
+      <button class="btn koyu" id="eK">Kaydet</button>`, s => {
+      const i = s.querySelector("#eS"); i.focus();
+      s.querySelector("#eG").onclick = () => { const a = i.style.webkitTextSecurity === "none"; i.style.webkitTextSecurity = a ? "disc" : "none"; };
+      s.querySelector("#eK").onclick = async () => { const v = i.value.trim(); if (v.length < 6) return toast("Klinik şifresi en az 6 karakter olmalı"); await Veri.ayarYaz("ekipSifre", v); kapat(); toast("Klinik şifresi kaydedildi"); if (typeof sonra === "function") sonra(); else ciz(); }; });
+  },
+  async ekipPaylas() {
+    if (!Veri.ayar("ekipSifre")) return EYLEM.ekipSifre(() => EYLEM.ekipPaylas());
+    try { const d = new Date(), ad = `KlinikDefteri-paylasim-${bugun()}-${saat(yerel(d)).replace(":", "")}.txt`;
+      const s = await dosyaVer(ad, await Ekip.paket(Veri.ayar("ekipSifre")), "text/plain");
+      if (s !== "vazgecildi") toast(s === "paylasildi" ? "Defter gönderildi · karşı telefonda Ayarlar → Gelen defteri birleştir" : "Dosya indirildi · WhatsApp'tan gönderin"); }
+    catch (e) { toast("Paylaşılamadı: " + e.message); }
+  },
+  ekipBirlestir() {
+    if (!izinVar("birleştirme")) return;
+    const inp = document.createElement("input"); inp.type = "file";
+    inp.onchange = async () => { const f = inp.files[0]; if (!f) return; ekipAc(await f.text()); };
+    inp.click();
+  },
   pin() {
     perde(`<h3>Giriş şifresini değiştir</h3><label>Mevcut şifre<input class="girdi" id="p0" type="tel" inputmode="numeric" maxlength="4" style="-webkit-text-security:disc"></label><div class="ikili-g"><label>Yeni şifre<input class="girdi" id="p1" type="tel" inputmode="numeric" maxlength="4" style="-webkit-text-security:disc"></label><label>Yeni (tekrar)<input class="girdi" id="p2" type="tel" inputmode="numeric" maxlength="4" style="-webkit-text-security:disc"></label></div>
       <label>Arka planda kaç dakika kalınca kilitlensin<select class="girdi" id="pD">${[1, 2, 5, 15].map(n => `<option ${+(Veri.ayar("kilitDk") || 2) === n ? "selected" : ""}>${n}</option>`).join("")}</select></label><p class="kucuk">Not: eski yedekler, alındıkları zamanki şifreyle açılır.</p><button class="btn koyu" id="pK">Kaydet</button>`, s => {
@@ -657,11 +734,11 @@ const EYLEM = {
   async driveGeri() { try { const m = await Google.yedekOku(); if (!m) return toast("Drive'da yedek yok"); driveGeriYukleSor(m); } catch (e) { toast(e.message); } },
   googleKurulum: () => googleBaglan(true),
   geriyukle() {
-    const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".kdy,application/octet-stream,application/json";
+    const inp = document.createElement("input"); inp.type = "file";          // 1.1.0: tür sınırı yok (iPhone bilinmeyen uzantıyı seçtirmiyordu)
     inp.onchange = async () => { const f = inp.files[0]; if (!f) return; const metin = await f.text();
       perde(`<h3>Yedekten geri yükle</h3><p class="kucuk">${esc(f.name)} · bu telefondaki bütün kayıtların YERİNE geçer.</p><label>Yedeğin şifresi (yedek alındığı zamanki giriş şifresi)<input class="girdi" id="yS" type="tel" inputmode="numeric" maxlength="4" style="-webkit-text-security:disc"></label><p class="hata" id="yH"></p><button class="btn ana" id="yK">Geri yükle</button><button class="btn ince" data-kapat>Vazgeç</button>`, s => {
         s.querySelector("[data-kapat]").onclick = kapat; s.querySelector("#yS").focus();
-        s.querySelector("#yK").onclick = async () => { try { const y = await yedekCoz(metin, s.querySelector("#yS").value); await Veri.iceAl(y); OTURUM.pin = s.querySelector("#yS").value; await pinKaydet(OTURUM.pin); await lisansTazele(false); kapat(); toast(`Geri yüklendi · ${A().hasta.length} hasta, ${A().islem.length} işlem`); git("ana"); } catch (e) { s.querySelector("#yH").textContent = e.message; } }; }); };
+        s.querySelector("#yK").onclick = async () => { try { const y = await yedekCoz(metin, s.querySelector("#yS").value); await Veri.iceAl(y); stokYenile(); OTURUM.pin = s.querySelector("#yS").value; await pinKaydet(OTURUM.pin); await lisansTazele(false); kapat(); toast(`Geri yüklendi · ${A().hasta.length} hasta, ${A().islem.length} işlem`); git("ana"); } catch (e) { s.querySelector("#yH").textContent = e.message; } }; }); };
     inp.click();
   }
 };
@@ -687,7 +764,7 @@ document.addEventListener("click", e => {
 // ---------------------------------------------------------------- açılış
 (async () => {
   try {
-    await Veri.yukle(); await Lisans.hazirla(); OTURUM.durum = await Lisans.durum();
+    await Veri.yukle(); stokYenile(); await Lisans.hazirla(); OTURUM.durum = await Lisans.durum();
     if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
     ciz();
   } catch (e) { $("#uyg").innerHTML = `<div class="kilit"><div class="logo">!</div><b>Program açılamadı</b><p class="kucuk">${esc(e.message)}. Tarayıcının gizli (özel) penceresinde veri saklanamaz; normal pencerede açın.</p></div>`; }
