@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.1.0";
+const SURUM = "1.1.1";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -314,11 +314,11 @@ function yeniEkran(p) {
 }
 function yeniIc() {
   const h = hastaBul(YENI.hastaId), HA = hastaAyar();
-  let html = "";
+  let html = "", giris = "";
   if (!h) {
     const q = kucuk(YENI.ad.trim()), qd = YENI.ad.replace(/\D/g, "");
     const es = q.length >= 2 ? A().hasta.filter(x => kucuk(x.ad).includes(q) || (qd.length >= 3 && String(x.tel || "").replace(/\D/g, "").includes(qd))).slice(0, 5) : [];
-    html += `<label>Hasta adı soyadı<input class="girdi" id="yAd" value="${esc(YENI.ad)}" autocomplete="off" placeholder="Ad soyad ya da telefon yazın"></label>`;
+    giris = `<label>Hasta adı soyadı<input class="girdi" id="yAd" value="${esc(YENI.ad)}" autocomplete="off" placeholder="Ad soyad ya da telefon yazın"></label>`;      // 1.1.1: kutu yazarken yeniden çizilmez (klavye harfe dönüyordu)
     if (YENI.yeniHasta) html += `<div class="serit ana" style="margin:0">＋ Yeni hasta olarak kaydedilecek<button data-hdegis>Değiştir</button></div>`;
     else if (q.length >= 2) html += `<div class="oneri">${es.map(x => { const s = hastaIslem(x.id)[0]; return `<button class="s" data-hsec="${x.id}" style="width:100%;text-align:left"><span class="av ${renk(x.ad)}">${esc(bas(x.ad))}</span><div style="flex:1"><b>${esc(x.ad)}</b><small>${x.tel ? esc(x.tel) : "telefon yok"}${s ? " · son geliş " + tr(s.ts) : ""}</small></div>${x.alerji ? `<span class="et e-teh">alerji</span>` : ""}</button>`; }).join("")}
       <button class="s" data-hyeni style="width:100%;text-align:left"><span class="av" style="background:var(--zemin);color:var(--ana)">＋</span><div style="flex:1"><b style="color:var(--ana)">"${esc(YENI.ad.trim())}" yeni hasta olarak ekle</b></div></button></div>`;
@@ -327,7 +327,7 @@ function yeniIc() {
         + (HA.tc ? `<label>TC kimlik no (isteğe bağlı)<input class="girdi" id="yTc" inputmode="numeric" maxlength="11" value="${esc(YENI.tc)}"></label>` : "")
         + (HA.dogum ? `<label>Doğum yılı (isteğe bağlı)<input class="girdi" id="yDogum" inputmode="numeric" maxlength="4" value="${esc(YENI.dogum)}"></label>` : "");
     }
-    if (!YENI.yeniHasta) return html + `<div class="bos-durum">Hastanın adını yazın. Daha önce geldiyse listeden seçin; alerjisi ve son gelişi görünür.</div>`;
+    if (!YENI.yeniHasta) return giris + `<div id="yAlt">` + html + `<div class="bos-durum">Hastanın adını yazın. Daha önce geldiyse listeden seçin; alerjisi ve son gelişi görünür.</div></div>`;
   } else {
     if (h.alerji) html += `<div class="uyari-kutu">⚠ ${esc(h.alerji)}</div>`;
     const s = hastaIslem(h.id)[0];
@@ -349,7 +349,7 @@ function yeniIc() {
     <div class="toplam"><div><small>Toplam · ${kalem} kalem${YENI.tutarElle != null ? " · elle" : ""}</small><br><button data-tutar style="color:#fff"><b>${tl(top)}</b> <span style="font-size:12px;opacity:.7">✎</span></button></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:62%">${[...odemeTurleri(), "Sonra"].map(o => `<button class="cip" data-odeme="${esc(o)}" style="${YENI.odeme === o ? "background:#fff;color:var(--yazi)" : "background:rgba(255,255,255,.12);color:#fff;box-shadow:none"}">${esc(o)}</button>`).join("")}</div></div>
     <button class="btn koyu" data-kaydet>Kaydet</button>`;
-  return html;
+  return giris ? giris + `<div id="yAlt">` + html + `</div>` : html;
 }
 async function yeniKaydet() {
   if (!izinVar("yeni işlem")) return;
@@ -586,13 +586,17 @@ const BAGLA = {
     const tazele = (odak) => { const a = document.activeElement, id = a && a.id, pos = a && a.selectionStart; ic.innerHTML = yeniIc(); const e = id && ic.querySelector("#" + id); if (e && odak !== false) { e.focus(); try { e.setSelectionRange(pos, pos); } catch (x) {} } };
     ic.addEventListener("input", e => {
       const id = e.target.id, v = e.target.value;
-      if (id === "yAd") { YENI.ad = v; YENI.yeniHasta = false; tazele(); }
+      if (id === "yAd") { YENI.ad = v; YENI.yeniHasta = false; const alt = ic.querySelector("#yAlt"), g = document.createElement("div"); g.innerHTML = yeniIc(); const yeni = g.querySelector("#yAlt"); if (alt && yeni) alt.innerHTML = yeni.innerHTML; else tazele(); }
       else if (id === "yNeden") YENI.neden = v; else if (id === "yNot") YENI.not = v; else if (id === "yTel") YENI.tel = v; else if (id === "yTc") YENI.tc = v; else if (id === "yDogum") YENI.dogum = v;
     });
     ic.addEventListener("click", e => {
       const b = e.target.closest("button"); if (!b) return;
       if (b.dataset.hsec) { YENI.hastaId = b.dataset.hsec; YENI.yeniHasta = false; ciz(); return; }
-      if (b.hasAttribute("data-hyeni")) { YENI.yeniHasta = true; tazele(false); return; }
+      if (b.hasAttribute("data-hyeni")) {
+        const yazi = YENI.ad.trim(), rakam = yazi.replace(/\D/g, "");
+        if (rakam.length >= 7 && !/\p{L}/u.test(yazi)) { YENI.tel = yazi; YENI.ad = ""; YENI.yeniHasta = false; tazele(false); const e = ic.querySelector("#yAd"); if (e) { e.focus(); e.placeholder = "Hastanın adını yazın (telefon kaydedildi)"; } return toast("Telefon kaydedildi · şimdi hastanın adını yazın"); }      // telefon yazıp "yeni hasta" dendi
+        YENI.yeniHasta = true; tazele(false); return;
+      }
       if (b.hasAttribute("data-hdegis")) { YENI.yeniHasta = false; tazele(false); const e = ic.querySelector("#yAd"); if (e) e.focus(); return; }
       if (b.dataset.grup) { YENI.grup = b.dataset.grup; tazele(false); return; }
       if (b.dataset.arti) { YENI.adet[b.dataset.arti] = (YENI.adet[b.dataset.arti] || 0) + 1; YENI.tutarElle = null; tazele(false); const m = A().malzeme.find(x => x.id === b.dataset.arti); if (alerjiEslesir(hastaBul(YENI.hastaId), m) && YENI.adet[m.id] === 1) toast("⚠ Dikkat: hastanın alerjisi bu malzemeyle eşleşiyor"); return; }
