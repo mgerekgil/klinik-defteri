@@ -1,9 +1,10 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.0.0";
+const SURUM = "1.0.1";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
-const GRUPLAR = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
+const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
+const gruplar = () => { const g = Veri.ayar("gruplar"); return Array.isArray(g) && g.length ? g : VARSAYILAN_GRUP; };
 const ORNEK_MALZEME = [
   ["Serum fizyolojik 500 ml", "Serum", 120, 45, 30, 10], ["Dekstroz %5 500 ml", "Serum", 130, 50, 20, 5], ["Ringer laktat 500 ml", "Serum", 130, 50, 10, 5],
   ["Antibiyotik ampul", "İlaç / ampul", 180, 85, 10, 5, "penisilin"], ["Vitamin ampul", "İlaç / ampul", 90, 30, 20, 5], ["Ağrı kesici ampul", "İlaç / ampul", 70, 22, 20, 5],
@@ -26,6 +27,7 @@ const tr = iso => iso ? iso.slice(0, 10).split("-").reverse().join(".") : "";
 const saat = iso => iso ? iso.slice(11, 16) : "";
 const AYLAR = ["OCA", "ŞUB", "MAR", "NİS", "MAY", "HAZ", "TEM", "AĞU", "EYL", "EKİ", "KAS", "ARA"];
 const AY_TAM = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+const GUN_KISA = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
 const GUNLER = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
 const bas = ad => String(ad || "?").trim().split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toLocaleUpperCase("tr") || "?";
 const renk = ad => "a" + ((String(ad || "").split("").reduce((s, c) => s + c.charCodeAt(0), 0) % 5) + 1);
@@ -165,8 +167,14 @@ document.addEventListener("visibilitychange", () => {
 const YOL = () => (location.hash || "#ana").slice(1).split("/");
 window.addEventListener("hashchange", () => { kapat(); ciz(); });
 const git = h => { if (location.hash === "#" + h) ciz(); else location.hash = h; };
-const ALT = [["ana", "⌂", "Ana sayfa"], ["hastalar", "☺", "Hastalar"], ["malzeme", "▤", "Malzeme"], ["kasa", "₺", "Kasa"], ["ayarlar", "⚙", "Ayarlar"]];
-const altCubuk = on => `<nav class="alt">${ALT.map(([k, i, t]) => `<button data-git="${k}" class="${on === k ? "on" : ""}"><i>${i}</i>${t}</button>`).join("")}</nav>`;
+const SVG = d => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const SIMGE = {ana: '<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5h4v5"/>',
+  hastalar: '<circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c.8-3.5 3.3-5.4 6.2-5.4s5.4 1.9 6.2 5.4"/><circle cx="17.2" cy="9" r="2.5"/><path d="M16.6 14.7c2.4.3 4.1 1.9 4.7 4.8"/>',
+  malzeme: '<path d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4z"/><path d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9"/>',
+  kasa: '<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/>',
+  ayarlar: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>'};
+const ALT = [["ana", "Ana sayfa"], ["hastalar", "Hastalar"], ["malzeme", "Malzeme"], ["kasa", "Kasa"], ["ayarlar", "Ayarlar"]];
+const altCubuk = on => `<nav class="alt">${ALT.map(([k, t]) => `<button data-git="${k}" class="${on === k ? "on" : ""}"><i>${SVG(SIMGE[k])}</i>${t}</button>`).join("")}</nav>`;
 function seritler() {
   const d = OTURUM.durum, out = [];
   if (d && !d.acik) out.push(`<div class="serit teh">🔒 ${esc(d.yaz)} · kayıtlarınız duruyor<button data-a="saticiya">Satıcıya yaz</button></div>`);
@@ -214,8 +222,9 @@ function kilitEkrani(u) {
     u.innerHTML = `<main class="kilit"><div class="logo">✚</div><div><b style="font-size:20px">${esc(Veri.ayar("isletmeAd") || "Klinik Defteri")}</b><div class="kucuk">Giriş şifrenizi yazın</div></div>
       <div class="pin">${[0, 1, 2, 3].map(i => `<span class="${i < pin.length ? "d" : ""}"></span>`).join("")}</div><p class="hata">${esc(h)}</p>
       <div class="pin-tus">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}">${n}</button>`).join("")}<button class="bos" data-a="unuttum" style="font-size:12px;color:var(--soluk)">Unuttum</button><button data-n="0">0</button><button class="bos" data-sil>⌫</button></div></main>`;
-    u.querySelectorAll("[data-n]").forEach(b => b.onclick = () => { if (pin.length < 4) { pin += b.dataset.n; ciz2(); if (pin.length === 4) dene(); } });
-    u.querySelector("[data-sil]").onclick = () => { pin = pin.slice(0, -1); ciz2(); };
+    const nokta = () => u.querySelectorAll(".pin span").forEach((s, i) => s.classList.toggle("d", i < pin.length));
+    u.querySelectorAll("[data-n]").forEach(b => b.addEventListener("pointerdown", e => { e.preventDefault(); if (pin.length < 4) { pin += b.dataset.n; nokta(); if (pin.length === 4) dene(); } }));
+    u.querySelector("[data-sil]").addEventListener("pointerdown", e => { e.preventDefault(); pin = pin.slice(0, -1); nokta(); });
   };
   const dene = async () => {
     const y = Veri.ayar("yanlis") || {n: 0, t: 0};
@@ -285,7 +294,7 @@ function yeniIc() {
   const otom = M.reduce((s, m) => s + (YENI.adet[m.id] || 0) * (+m.satis || 0), 0), top = YENI.tutarElle != null ? YENI.tutarElle : otom;
   const kalem = Object.values(YENI.adet).filter(x => x > 0).length;
   html += `<label>Geliş nedeni${HA.neden ? " *" : " (isteğe bağlı)"}<input class="girdi" id="yNeden" value="${esc(YENI.neden)}" placeholder="Şikâyet ya da tanı"></label>
-    <div class="cips">${["Sık", ...GRUPLAR].map(g => `<button class="cip ${YENI.grup === g ? "on" : ""}" data-grup="${g}">${g === "Sık" ? "Sık kullanılan" : g.replace(" / ampul", "")}</button>`).join("")}</div>
+    <div class="cips">${["Sık", ...gruplar()].map(g => `<button class="cip ${YENI.grup === g ? "on" : ""}" data-grup="${g}">${g === "Sık" ? "Sık kullanılan" : g.replace(" / ampul", "")}</button>`).join("")}</div>
     <div class="kart" style="padding:4px 14px">${[...secili, ...goster].map(m => {
       const n = YENI.adet[m.id] || 0, al = alerjiEslesir(h, m);
       return `<div class="mal"><div class="ad">${esc(m.ad)}<small>${tl(m.satis)}${m.stokTut ? " · stok " + m.stok : ""}${al ? ` · <span class="et e-teh">alerji uyarısı</span>` : ""}</small></div><div class="adet ${n ? "" : "sif"}"><button data-eksi="${m.id}" aria-label="Azalt">−</button><span class="n">${n}</span><button data-arti="${m.id}" aria-label="Artır">＋</button></div></div>`; }).join("") || `<div class="bos-durum">Bu grupta malzeme yok. Malzeme ekranından ekleyin.</div>`}</div>
@@ -383,7 +392,7 @@ function hastaListe() {
       && (HF.f === "hepsi" || (HF.f === "hafta" && x.s >= hafta) || (HF.f === "borc" && x.b > 0) || (HF.f === "alerji" && x.h.alerji)))
     .sort((a, b) => (b.s || b.h.ilk || "").localeCompare(a.s || a.h.ilk || ""));
   if (!L.length) return `<div class="kart bos-durum">${A().hasta.length ? "Eşleşen hasta yok." : "<b>Henüz hasta yok</b>İlk işlemi girdiğinizde hasta kendiliğinden eklenir."}</div>`;
-  return `<div class="kart liste">${L.slice(0, 200).map(x => `<div class="s" data-git="hasta/${x.h.id}"><span class="av ${renk(x.h.ad)}">${esc(bas(x.h.ad))}</span><div class="m"><b>${esc(x.h.ad)}</b><small>${x.s ? (x.s.startsWith(bugun()) ? "Bugün" : tr(x.s)) : "işlem yok"} · ${x.n} geliş${x.h.tel ? "" : " · telefon yok"}${x.h.alerji ? ` · <span class="et e-teh">alerji</span>` : ""}${x.b ? ` · <span class="et e-uy">${tl(x.b)} borç</span>` : ""}</small></div><div class="t">${tl(x.od)}</div></div>`).join("")}</div>`;
+  return `<div class="kart liste">${L.slice(0, 200).map(x => `<div class="s" data-git="hasta/${x.h.id}"><span class="av ${renk(x.h.ad)}">${esc(bas(x.h.ad))}</span><div class="m"><b>${esc(x.h.ad)}</b><small>${x.s ? (x.s.startsWith(bugun()) ? "Bugün" : x.s.startsWith(gunEkle(bugun(), -1)) ? "Dün" : tr(x.s)) : "işlem yok"} · ${x.n} geliş${x.h.tel ? "" : " · telefon yok"}${x.h.alerji ? ` · <span class="et e-teh">alerji</span>` : ""}${x.b ? ` · <span class="et e-uy">${tl(x.b)} borç</span>` : ""}</small></div><div class="t">${tl(x.od)}</div></div>`).join("")}</div>`;
 }
 
 // 6-7 · malzemeler
@@ -392,14 +401,14 @@ function malzemelerEkran() {
   const M = A().malzeme, deger = M.filter(m => m.stokTut).reduce((s, m) => s + (+m.stok || 0) * (+m.alis || 0), 0);
   return `${ust("Malzemeler", `${M.length} kalem · stok değeri ${tl(deger)}`, false, `<button class="yuv" style="background:var(--vurgu)" data-git="malzeme/yeni" aria-label="Yeni malzeme">＋</button>`)}
   ${seritler()}<main class="ic" data-baglan="malzemeler"><label class="ara">⌕ <input id="mAra" value="${esc(MF.q)}" placeholder="Malzeme ara" autocomplete="off"></label>
-    <div class="cips">${["Hepsi", ...GRUPLAR].map(g => `<button class="cip ${MF.g === g ? "on" : ""}" data-mg="${g}">${g.replace(" / ampul", "")}</button>`).join("")}</div>
+    <div class="cips">${["Hepsi", ...gruplar()].map(g => `<button class="cip ${MF.g === g ? "on" : ""}" data-mg="${g}">${g.replace(" / ampul", "")}</button>`).join("")}</div>
     <div id="mListe">${malzemeListe()}</div></main>${altCubuk("malzeme")}`;
 }
 function malzemeListe() {
   const q = kucuk(MF.q.trim()), t = bugun();
   const L = A().malzeme.filter(m => (MF.g === "Hepsi" || m.grup === MF.g) && (!q || kucuk(m.ad).includes(q)));
   if (!L.length) return `<div class="kart bos-durum">${A().malzeme.length ? "Eşleşen malzeme yok." : "<b>Malzeme listesi boş</b>＋ ile ilk malzemeyi ekleyin."}</div>`;
-  return `<div class="kart" style="padding:4px 14px">${GRUPLAR.map(g => { const gl = L.filter(m => m.grup === g).sort((a, b) => a.ad.localeCompare(b.ad, "tr")); return gl.length ? `<div class="kat">${g.toLocaleUpperCase("tr")}</div>` + gl.map(m => {
+  return `<div class="kart" style="padding:4px 14px">${[...gruplar(), ...[...new Set(A().malzeme.map(m => m.grup))].filter(g => !gruplar().includes(g))].map(g => { const gl = L.filter(m => m.grup === g).sort((a, b) => a.ad.localeCompare(b.ad, "tr")); return gl.length ? `<div class="kat">${g.toLocaleUpperCase("tr")}</div>` + gl.map(m => {
     const az = m.stokTut && m.sinir > 0 && m.stok <= m.sinir, skt = m.skt && m.skt.slice(0, 7) <= gunEkle(t, 60).slice(0, 7);
     return `<button class="mal" data-git="malzeme/${m.id}" style="width:100%;text-align:left"><div class="ad">${esc(m.ad)}<small>${m.stokTut ? "Stok " + m.stok : "Stok tutulmaz"}${az ? ` · <span class="et e-uy">azaldı</span>` : ""}${skt ? ` · <span class="et e-teh">SKT ${m.skt.slice(5, 7)}.${m.skt.slice(0, 4)}</span>` : ""}${m.sik ? " · ★" : ""}</small></div><div class="fiyat">${tl(m.satis)}${m.alis ? `<small>alış ${tl(m.alis)}</small>` : ""}</div></button>`; }).join("") : ""; }).join("")}</div>`;
 }
@@ -408,7 +417,7 @@ function malzemeEkran(id) {
   if (!m) return `${ust("Malzeme bulunamadı", "", true)}<main class="ic"></main>`;
   return `${ust(yeni ? "Yeni malzeme" : "Malzeme", esc(m.ad), true)}<main class="ic" data-baglan="malzeme">
     <label>Adı<input class="girdi" id="mAd" value="${esc(m.ad)}" placeholder="Malzeme ya da hizmet adı"></label>
-    <label>Grubu</label><div class="cips" style="margin-top:-6px" id="mGrup">${GRUPLAR.map(g => `<button class="cip ${m.grup === g ? "on" : ""}" data-g="${g}">${g}</button>`).join("")}</div>
+    <label>Grubu</label><div class="cips" style="margin-top:-6px" id="mGrup">${gruplar().map(g => `<button class="cip ${m.grup === g ? "on" : ""}" data-g="${g}">${g}</button>`).join("")}</div>
     <div class="ikili-g"><label>Satış fiyatı (₺)<input class="girdi" id="mSatis" inputmode="decimal" value="${esc(m.satis)}"></label><label>Alış fiyatı (₺)<input class="girdi" id="mAlis" inputmode="decimal" value="${esc(m.alis)}"></label></div>
     <div class="kart ayar" style="padding:2px 14px"><div class="s"><div>Stok tut<small>Hizmetlerde kapatın</small></div><button class="anah ${m.stokTut ? "on" : ""}" id="mStokTut" aria-label="Stok tut"></button></div></div>
     <div class="ikili-g" id="mStokAlan" ${m.stokTut ? "" : "hidden"}><label>Stok<input class="girdi" id="mStok" inputmode="numeric" value="${esc(m.stok)}"></label><label>Bu sayının altında uyar<input class="girdi" id="mSinir" inputmode="numeric" value="${esc(m.sinir)}"></label></div>
@@ -444,12 +453,31 @@ function kasaEkran() {
     <div class="kahraman"><small>${esc(baslik)} toplamı</small><b>${tl(top)}</b><div class="ikili" style="flex-wrap:wrap;gap:6px 16px">${Object.entries(tur).map(([k, v]) => `<span>${esc(k)} <b>${tl(v).replace(" ₺", "")}</b></span>`).join("") || "<span>Henüz tahsilat yok</span>"}</div></div>
     <div class="kart"><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--soluk)"><span>Son 7 gün</span><span>Bugün ${tl(gt[6])}</span></div>
       <div class="cubuk">${gt.map((v, k) => `<span class="${k === 6 ? "bug" : ""}" style="height:${Math.max(4, Math.round(v / mx * 100))}%" title="${tl(v)}"></span>`).join("")}</div>
-      <div class="cubuk-alt">${gunler.map((g, k) => `<span>${k === 6 ? "Bugün" : GUNLER[new Date(g + "T12:00:00").getDay()].slice(0, 3)}</span>`).join("")}</div></div>
+      <div class="cubuk-alt">${gunler.map((g, k) => `<span>${k === 6 ? "Bugün" : GUN_KISA[new Date(g + "T12:00:00").getDay()]}</span>`).join("")}</div></div>
     <div class="uc"><div class="kart"><small>Hasta</small><b>${hasta}</b></div><div class="kart"><small>Alınacak</small><b style="color:${alin ? "var(--uyari)" : "inherit"}">${tl(alin)}</b></div><div class="kart"><small>Malzeme gideri</small><b>${tl(gider)}</b></div></div>
+    <div class="uc"><div class="kart"><small>Kâr</small><b style="color:${top - gider >= 0 ? "var(--iyi)" : "var(--tehlike)"}">${tl(top - gider)}</b></div><div class="kart"><small>Kâr oranı</small><b>${top ? "%" + Math.round((top - gider) / top * 100) : "–"}</b></div><div class="kart"><small>İşlem başı</small><b>${is.length ? tl(Math.round((top + alin) / is.length)) : "–"}</b></div></div>
+    <p class="kucuk" style="margin:-4px 4px 0">Kâr = tahsil edilen − kullanılan malzemelerin alış fiyatı (kira, maaş gibi giderler dahil değil).</p>
     <div class="bas">En çok yapılan</div>
     ${enCok.length ? `<div class="kart liste">${enCok.map(([k, v]) => `<div class="s" style="cursor:default"><div class="m"><b>${esc(k)}</b><small>${v.n} adet</small></div><div class="t">${tl(v.t)}</div></div>`).join("")}</div>` : `<div class="kart bos-durum">Bu dönemde işlem yok.</div>`}
     <button class="btn ince" data-a="excel">⬇ Excel'e aktar (${is.length} işlem)</button>
+    <button class="btn ince" data-a="kasaWa">💬 Özeti WhatsApp'tan gönder${Veri.ayar("isletmeTel") ? ` · ${esc(Veri.ayar("isletmeTel"))}` : ""}</button>
   </main>${altCubuk("kasa")}`;
+}
+function kasaOzeti() {
+  const [a, b] = kasaAraligi(), bitis = b + "T99", is = A().islem.filter(i => i.ts >= a && i.ts <= bitis), t = bugun();
+  const od = is.filter(i => i.odendi), top = od.reduce((s, i) => s + i.toplam, 0), alin = is.filter(i => !i.odendi).reduce((s, i) => s + i.toplam, 0);
+  const gider = is.reduce((s, i) => s + (i.kalemler || []).reduce((x, k) => x + k.adet * (k.alis || 0), 0), 0), kar = top - gider;
+  const tur = {}; od.forEach(i => { tur[i.odeme || "Diğer"] = (tur[i.odeme || "Diğer"] || 0) + i.toplam; });
+  const say = {}; is.forEach(i => (i.kalemler || []).forEach(k => { if (!say[k.ad]) say[k.ad] = {n: 0, t: 0}; say[k.ad].n += k.adet; say[k.ad].t += k.adet * k.fiyat; }));
+  const enCok = Object.entries(say).sort((x, y) => y[1].t - x[1].t).slice(0, 3);
+  const donem = KF.d === "gun" ? "Bugün (" + tr(t) + ")" : KF.d === "hafta" ? "Bu hafta (" + tr(a) + " – " + tr(b) + ")" : KF.d === "ay" ? AY_TAM[+t.slice(5, 7) - 1] + " " + t.slice(0, 4) : tr(a) + " – " + tr(b);
+  const d = new Date(), c = "━━━━━━━━━━━━━━";
+  return [`📊 *${Veri.ayar("isletmeAd") || "Klinik"}*`, `*${donem} kasa özeti*`, c,
+    `💰 Tahsilat: *${tl(top)}*`, ...Object.entries(tur).map(([k, v]) => `    • ${k}: ${tl(v)}`),
+    `⏳ Alınacak: ${tl(alin)}`, `📦 Malzeme gideri: ${tl(gider)}`, `✅ Kâr: *${tl(kar)}*${top ? ` (%${Math.round(kar / top * 100)})` : ""}`,
+    `👥 Hasta: ${new Set(is.map(i => i.hastaId)).size} · İşlem: ${is.length}`,
+    ...(enCok.length ? ["", "🏆 En çok yapılan:", ...enCok.map(([k, v], i) => `    ${i + 1}. ${k} · ${v.n} adet · ${tl(v.t)}`)] : []),
+    c, `_Klinik Defteri · ${tr(yerel(d))} ${saat(yerel(d))}_`].join("\n");
 }
 async function excelAktar() {
   const [a, b] = kasaAraligi(), bitis = b + "T99";
@@ -467,6 +495,9 @@ function ayarlarEkran() {
   return `${ust("Ayarlar")}${seritler()}<main class="ic" style="gap:10px">
     <div class="grup">İşletme</div><div class="kart ayar" style="padding:2px 14px"><button class="s" data-a="isletme" style="width:100%;text-align:left"><div>${esc(Veri.ayar("isletmeAd") || "İşletme adı")}<small>${esc(Veri.ayar("isletmeTel") || "")}${Veri.ayar("isletmeAdres") ? " · " + esc(Veri.ayar("isletmeAdres")) : ""}</small></div><span class="ok">›</span></button></div>
     <div class="grup">Hasta kaydı</div><div class="kart ayar" style="padding:2px 14px">${an("tel", HA.tel, "Telefon sor", "Boş bırakılabilir")}${an("tc", HA.tc, "TC kimlik no sor", "Açarsanız saklama sorumluluğu sizdedir (KVKK)")}${an("dogum", HA.dogum, "Doğum yılı sor")}${an("neden", HA.neden, "Geliş nedeni zorunlu")}</div>
+    <div class="grup">Malzemeler</div><div class="kart ayar" style="padding:2px 14px">
+      <button class="s" data-git="malzeme" style="width:100%;text-align:left"><div>Malzeme ve fiyat listesi<small>${A().malzeme.length} kalem · ekle, sil, fiyat ve stok değiştir</small></div><span class="ok">›</span></button>
+      <button class="s" data-a="kategori" style="width:100%;text-align:left"><div>Kategoriler<small>${gruplar().map(esc).join(" · ")}</small></div><span class="ok">›</span></button></div>
     <div class="grup">Ödeme türleri</div><div class="kart ayar" style="padding:2px 14px"><button class="s" data-a="odeme" style="width:100%;text-align:left"><div>${odemeTurleri().map(esc).join(" · ")}<small>Ekle, sil, adını değiştir</small></div><span class="ok">›</span></button></div>
     <div class="grup">Güvenlik ve yedek</div><div class="kart ayar" style="padding:2px 14px">
       <button class="s" data-a="pin" style="width:100%;text-align:left"><div>Giriş şifresi<small>4 hane · ${Veri.ayar("kilitDk") || 2} dk arka planda kalınca kilitlenir</small></div><span class="ok">›</span></button>
@@ -558,6 +589,7 @@ const EYLEM = {
   geri: () => (history.length > 1 ? history.back() : git("ana")),
   yedek: () => yedekGonder().catch(e => toast("Yedek alınamadı: " + e.message)),
   excel: () => excelAktar(),
+  kasaWa() { const no = waNo(Veri.ayar("isletmeTel")); window.open(`https://wa.me/${no}?text=${encodeURIComponent(kasaOzeti())}`, "_blank"); },
   async kopyala() { const k = Veri.ayar("cihaz"); try { await navigator.clipboard.writeText(k); toast("Cihaz kodu kopyalandı: " + k); } catch (e) { toast("Cihaz kodu: " + k); } },
   async lisansYenile() { toast("Denetleniyor…"); const ok = await Lisans.listeAl(); await lisansTazele(false); Lisans.bildir(SURUM); ciz(); toast(ok ? "Lisans güncel: " + OTURUM.durum.yaz : "İnternete bağlanılamadı · " + OTURUM.durum.yaz); },
   saticiya() { const m = `Merhaba, Klinik Defteri için yazıyorum.\nİşletme: ${Veri.ayar("isletmeAd") || ""}\nCihaz kodu: ${Veri.ayar("cihaz") || ""}`; window.open(`https://wa.me/${SATICI_TEL}?text=${encodeURIComponent(m)}`, "_blank"); },
@@ -576,6 +608,23 @@ const EYLEM = {
         if (b.dataset.osil) { const L = oku(); L.splice(+b.dataset.osil, 1); await Veri.ayarYaz("odemeTurleri", L); ciz3(s); }
         else if (b.id === "oE") { await Veri.ayarYaz("odemeTurleri", [...oku(), "Yeni ödeme türü"]); ciz3(s); const i = [...s.querySelectorAll("[data-oi]")].pop(); i.focus(); i.select(); }
         else if (b.id === "oK") { const L = [...new Set(oku())].filter(x => kucuk(x) !== "sonra"); if (!L.length) return toast("En az bir ödeme türü olmalı"); await Veri.ayarYaz("odemeTurleri", L); kapat(); toast("Kaydedildi"); ciz(); } });
+    });
+  },
+  kategori() {
+    const ciz3 = s => { s.querySelector("#cL").innerHTML = gruplar().map((g, i) => `<div class="s"><input class="girdi" data-ci="${i}" data-eski="${esc(g)}" value="${esc(g)}" style="padding:9px 12px"><span class="kucuk" style="white-space:nowrap;margin:0 6px">${A().malzeme.filter(m => m.grup === g).length} kalem</span><button data-csil="${i}" style="color:var(--tehlike);font-size:20px;padding:0 8px" aria-label="Sil">×</button></div>`).join(""); };
+    perde(`<h3>Malzeme kategorileri</h3><p class="kucuk">Adını değiştirince o kategorideki malzemeler de değişir. İçinde malzeme olan kategori silinince malzemeleri ilk kategoriye taşınır.</p><div class="kart ayar" style="padding:2px 14px" id="cL"></div><button class="btn ince" id="cE">＋ Kategori ekle</button><button class="btn koyu" id="cK">Kaydet</button>`, s => {
+      ciz3(s);
+      const kaydet = async () => {
+        const yeni = [...s.querySelectorAll("[data-ci]")].map(i => ({eski: i.dataset.eski, ad: i.value.trim().replace(/\s+/g, " ")})).filter(x => x.ad);
+        if (!yeni.length) { toast("En az bir kategori olmalı"); return false; }
+        for (const x of yeni) if (x.eski && x.eski !== x.ad) for (const m of A().malzeme.filter(m => m.grup === x.eski)) { m.grup = x.ad; await Veri.kaydet("malzeme", m); }
+        await Veri.ayarYaz("gruplar", [...new Set(yeni.map(x => x.ad))]); return true;
+      };
+      s.addEventListener("click", async e => { const b = e.target.closest("button"); if (!b) return;
+        if (b.dataset.csil) { if (!(await kaydet())) return; const L = gruplar().slice(), sil = L.splice(+b.dataset.csil, 1)[0]; if (!L.length) return toast("En az bir kategori olmalı");
+          for (const m of A().malzeme.filter(m => m.grup === sil)) { m.grup = L[0]; await Veri.kaydet("malzeme", m); } await Veri.ayarYaz("gruplar", L); ciz3(s); }
+        else if (b.id === "cE") { if (!(await kaydet())) return; await Veri.ayarYaz("gruplar", [...gruplar(), "Yeni kategori"]); ciz3(s); const i = [...s.querySelectorAll("[data-ci]")].pop(); i.dataset.eski = ""; i.focus(); i.select(); }
+        else if (b.id === "cK") { if (await kaydet()) { kapat(); toast("Kaydedildi"); ciz(); } } });
     });
   },
   pin() {

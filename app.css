@@ -4,7 +4,14 @@ body{background:var(--zemin);font-family:"Segoe UI",Inter,system-ui,-apple-syste
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;padding:0}
 #uyg{max-width:520px;margin:0 auto;height:100%;display:flex;flex-direction:column;background:var(--zemin);position:relative}
-.ust{padding-top:calc(10px + env(safe-area-inset-top,0px))}
+.ust{padding-top:calc(18px + env(safe-area-inset-top,0px));position:relative;z-index:2;background:var(--zemin)}
+/* 1.0.1: telefonun saat/şarj çubuğunun altı her zaman düz zemin (yazı buğulu görünmesin) */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--zemin);z-index:35;pointer-events:none}
+.ic>*{flex-shrink:0}          /* 1.0.1: uzun ekranda kartlar ezilmesin (kasa toplam kartı kayıyordu) */
+button,a,input,select,label,.cip,.s{touch-action:manipulation}      /* dokunma gecikmesi yok */
+input,select,textarea{font-size:16px!important}        /* iPhone yazarken ekranı büyütmesin */
+.alt svg{display:block}
+.alt button.on i{display:block}
 .ic{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:20px}
 .alt{padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
 .alt button{display:grid;justify-items:center;gap:3px;width:64px;color:inherit;font-size:11px}
