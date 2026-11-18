@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.0.1";
+const SURUM = "1.0.2";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -417,7 +417,7 @@ function malzemeEkran(id) {
   if (!m) return `${ust("Malzeme bulunamadı", "", true)}<main class="ic"></main>`;
   return `${ust(yeni ? "Yeni malzeme" : "Malzeme", esc(m.ad), true)}<main class="ic" data-baglan="malzeme">
     <label>Adı<input class="girdi" id="mAd" value="${esc(m.ad)}" placeholder="Malzeme ya da hizmet adı"></label>
-    <label>Grubu</label><div class="cips" style="margin-top:-6px" id="mGrup">${gruplar().map(g => `<button class="cip ${m.grup === g ? "on" : ""}" data-g="${g}">${g}</button>`).join("")}</div>
+    <label>Grubu</label><div class="cips" style="margin-top:-6px" id="mGrup">${gruplar().map(g => `<button class="cip ${m.grup === g ? "on" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("")}<button class="cip" data-gyeni style="color:var(--ana)">＋ Yeni grup</button><button class="cip" data-a="kategori" style="color:var(--soluk)">✎ Grupları düzenle</button></div>
     <div class="ikili-g"><label>Satış fiyatı (₺)<input class="girdi" id="mSatis" inputmode="decimal" value="${esc(m.satis)}"></label><label>Alış fiyatı (₺)<input class="girdi" id="mAlis" inputmode="decimal" value="${esc(m.alis)}"></label></div>
     <div class="kart ayar" style="padding:2px 14px"><div class="s"><div>Stok tut<small>Hizmetlerde kapatın</small></div><button class="anah ${m.stokTut ? "on" : ""}" id="mStokTut" aria-label="Stok tut"></button></div></div>
     <div class="ikili-g" id="mStokAlan" ${m.stokTut ? "" : "hidden"}><label>Stok<input class="girdi" id="mStok" inputmode="numeric" value="${esc(m.stok)}"></label><label>Bu sayının altında uyar<input class="girdi" id="mSinir" inputmode="numeric" value="${esc(m.sinir)}"></label></div>
@@ -566,7 +566,15 @@ const BAGLA = {
   malzeme(u, id) {
     const yeni = id === "yeni", m = yeni ? null : A().malzeme.find(x => x.id === id);
     let grup = (m && m.grup) || (MF.g !== "Hepsi" ? MF.g : "İlaç / ampul");
-    u.querySelectorAll("#mGrup [data-g]").forEach(b => b.onclick = () => { grup = b.dataset.g; u.querySelectorAll("#mGrup [data-g]").forEach(x => x.classList.toggle("on", x === b)); });
+    const sec = b => { grup = b.dataset.g; u.querySelectorAll("#mGrup [data-g]").forEach(x => x.classList.toggle("on", x === b)); };
+    u.querySelector("#mGrup").addEventListener("click", e => { const b = e.target.closest("[data-g]"); if (b) sec(b); });
+    u.querySelector("[data-gyeni]").onclick = () => perde(`<h3>Yeni grup</h3><label>Grup adı<input class="girdi" id="gY" placeholder="Grubun adı"></label><button class="btn koyu" id="gK">Ekle ve seç</button>`, s => {
+      const i = s.querySelector("#gY"); i.focus();
+      s.querySelector("#gK").onclick = async () => { const ad = i.value.trim().replace(/\s+/g, " "); if (ad.length < 2) return toast("Grup adını yazın");
+        if (!gruplar().some(g => kucuk(g) === kucuk(ad))) await Veri.ayarYaz("gruplar", [...gruplar(), ad]);
+        const ad2 = gruplar().find(g => kucuk(g) === kucuk(ad)); let b = [...u.querySelectorAll("#mGrup [data-g]")].find(x => x.dataset.g === ad2);
+        if (!b) { b = document.createElement("button"); b.className = "cip"; b.dataset.g = ad2; b.textContent = ad2; u.querySelector("[data-gyeni]").before(b); }
+        sec(b); kapat(); toast(`"${ad2}" grubu eklendi`); }; });
     ["mStokTut", "mSik"].forEach(k => u.querySelector("#" + k).onclick = e => { e.currentTarget.classList.toggle("on"); if (k === "mStokTut") u.querySelector("#mStokAlan").hidden = !e.currentTarget.classList.contains("on"); });
     u.querySelector("#mKaydet").onclick = async () => {
       const v = k => u.querySelector("#" + k).value.trim(), ad = v("mAd");
