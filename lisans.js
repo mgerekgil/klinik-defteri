@@ -5,6 +5,7 @@
 const Lisans = (() => {
   const APP = "KLINIKDEFTERI", ONEK = "klinik-lisans:";
   const LISTE_URL = "https://raw.githubusercontent.com/mgerekgil/lisans-listesi/main/klinik-lisanslar.json";
+  const LISTE_API = "https://api.github.com/repos/mgerekgil/lisans-listesi/contents/klinik-lisanslar.json?ref=main";      // 1.0.3: önbelleksiz (raw 5 dk önbellekte tutuyordu, iptal geç geliyordu)
   const ACIK_ANAHTAR = "23f5e27f5323c96f081e96d3437bf5807fe966a8f3512d162cf937db5c7b74f9";       // Lisans Yöneticisi'nin imza (doğrulama) anahtarı
   const MUHUR_ANAHTAR = "f226092bc7ff2bb4fcf45d2bf5175498bcef5b60370eec039697a73e1817f252";       // satıcının mühür anahtarı (yalnız satıcı açar)
   const VARSAYILAN_DENEME = 7, VARSAYILAN_KIRA = 20;
@@ -64,10 +65,11 @@ const Lisans = (() => {
   }
   async function listeAl() {
     try {
-      const r = await fetch(LISTE_URL + "?t=" + Date.now(), {cache: "no-store"});
-      if (!r.ok) return false;
-      const doc = await r.json();
-      if (!dogrula(doc)) return false;
+      let doc = null;
+      for (const [u, h] of [[LISTE_API, {Accept: "application/vnd.github.raw+json"}], [LISTE_URL + "?t=" + Date.now(), {}]]) {          // önce önbelleksiz yol, olmazsa raw
+        try { const r = await fetch(u, {cache: "no-store", headers: h}); if (!r.ok) continue; const d = await r.json(); if (dogrula(d)) { doc = d; break; } } catch (e) { /* sıradaki */ }
+      }
+      if (!doc) return false;
       const eski = Veri.ayar("liste");
       if (eski && eski.payload && String(eski.payload.issued) > String(doc.payload.issued)) return false;        // eski listeyle geri alınamaz
       await Veri.ayarYaz("liste", doc);

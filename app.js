@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.0.2";
+const SURUM = "1.0.3";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -352,12 +352,12 @@ function hastaDuzenle(id) {
     s.querySelector("#hKaydet").onclick = async () => {
       const v = k => (s.querySelector("#" + k) || {value: h[k.slice(1).toLowerCase()] || ""}).value.trim();
       const ad = v("hAd"); if (ad.length < 2) return toast("Adı yazın");
-      if (!id && !izinVar("yeni hasta")) return;
+      if (!izinVar(id ? "hasta düzenleme" : "yeni hasta")) return;
       const o = Object.assign(h, {ad, tel: v("hTel"), tc: v("hTc"), dogum: v("hDogum"), alerji: v("hAlerji"), not: v("hNot")});
       if (!o.ilk) o.ilk = yerel(new Date());
       await Veri.kaydet("hasta", o); kapat(); toast("Kaydedildi"); id ? ciz() : git("hasta/" + o.id);
     };
-    const sl = s.querySelector("#hSil"); if (sl) sl.onclick = () => onay(`${h.ad} ve ${hastaIslem(id).length} işlemi silinsin mi? Geri alınamaz.`, async () => {
+    const sl = s.querySelector("#hSil"); if (sl) sl.onclick = () => izinVar("silme") && onay(`${h.ad} ve ${hastaIslem(id).length} işlemi silinsin mi? Geri alınamaz.`, async () => {
       for (const i of hastaIslem(id)) await Veri.sil("islem", i.id);
       await Veri.sil("hasta", id); toast("Hasta silindi"); git("hastalar"); }, true);
   });
@@ -371,8 +371,8 @@ function islemDetay(iid) {
     ${i.odendi ? "" : `<div class="bas">Ödeme alındı</div><div class="cips">${odemeTurleri().map(o => `<button class="cip" data-od="${esc(o)}">${esc(o)}</button>`).join("")}</div>`}
     <button class="btn ince" id="iSil" style="color:var(--tehlike)">İşlemi sil (stok geri eklenir)</button><button class="btn ince" data-kapat>Kapat</button>`, s => {
     s.querySelector("[data-kapat]").onclick = kapat;
-    s.querySelectorAll("[data-od]").forEach(b => b.onclick = async () => { Object.assign(i, {odendi: true, odeme: b.dataset.od, odemeTs: yerel(new Date()).slice(0, 19)}); await Veri.kaydet("islem", i); kapat(); toast("Ödendi olarak işaretlendi"); ciz(); });
-    s.querySelector("#iSil").onclick = () => onay("Bu işlem silinsin mi?", async () => { await stokDegistir(i.kalemler, +1); await Veri.sil("islem", i.id); toast("İşlem silindi"); ciz(); }, true);
+    s.querySelectorAll("[data-od]").forEach(b => b.onclick = async () => { if (!izinVar("ödeme kaydı")) return; Object.assign(i, {odendi: true, odeme: b.dataset.od, odemeTs: yerel(new Date()).slice(0, 19)}); await Veri.kaydet("islem", i); kapat(); toast("Ödendi olarak işaretlendi"); ciz(); });
+    s.querySelector("#iSil").onclick = () => izinVar("silme") && onay("Bu işlem silinsin mi?", async () => { await stokDegistir(i.kalemler, +1); await Veri.sil("islem", i.id); toast("İşlem silindi"); ciz(); }, true);
   });
 }
 
@@ -577,16 +577,17 @@ const BAGLA = {
         sec(b); kapat(); toast(`"${ad2}" grubu eklendi`); }; });
     ["mStokTut", "mSik"].forEach(k => u.querySelector("#" + k).onclick = e => { e.currentTarget.classList.toggle("on"); if (k === "mStokTut") u.querySelector("#mStokAlan").hidden = !e.currentTarget.classList.contains("on"); });
     u.querySelector("#mKaydet").onclick = async () => {
+      if (!izinVar("malzeme değişikliği")) return;
       const v = k => u.querySelector("#" + k).value.trim(), ad = v("mAd");
       if (ad.length < 2) return toast("Malzeme adını yazın");
       const o = Object.assign(m || {}, {ad, grup, satis: sayi(v("mSatis")), alis: sayi(v("mAlis")), stokTut: u.querySelector("#mStokTut").classList.contains("on"),
         stok: Math.round(sayi(v("mStok"))), sinir: Math.round(sayi(v("mSinir"))), skt: v("mSkt"), sik: u.querySelector("#mSik").classList.contains("on"), alerji: v("mAlerji")});
       await Veri.kaydet("malzeme", o); toast("Kaydedildi"); git("malzeme");
     };
-    const gb = u.querySelector("#mGiris"); if (gb) gb.onclick = () => perde(`<h3>Stok girişi · ${esc(m.ad)}</h3><label>Gelen adet<input class="girdi" id="gA" inputmode="numeric"></label><label>Yeni alış fiyatı (isteğe bağlı)<input class="girdi" id="gF" inputmode="decimal" placeholder="${esc(m.alis || "")}"></label><button class="btn koyu" id="gK">Ekle</button>`, s => {
+    const gb = u.querySelector("#mGiris"); if (gb) gb.onclick = () => izinVar("stok girişi") && perde(`<h3>Stok girişi · ${esc(m.ad)}</h3><label>Gelen adet<input class="girdi" id="gA" inputmode="numeric"></label><label>Yeni alış fiyatı (isteğe bağlı)<input class="girdi" id="gF" inputmode="decimal" placeholder="${esc(m.alis || "")}"></label><button class="btn koyu" id="gK">Ekle</button>`, s => {
       s.querySelector("#gA").focus();
       s.querySelector("#gK").onclick = async () => { const n = Math.round(sayi(s.querySelector("#gA").value)); if (!n) return toast("Adet yazın"); m.stok = (+m.stok || 0) + n; if (s.querySelector("#gF").value.trim()) m.alis = sayi(s.querySelector("#gF").value); m.stokTut = true; await Veri.kaydet("malzeme", m); kapat(); toast(`${n} adet eklendi · stok ${m.stok}`); ciz(); }; });
-    const sl = u.querySelector("#mSil"); if (sl) sl.onclick = () => onay(`${m.ad} silinsin mi? (Eski işlemlerdeki kayıtlar durur.)`, async () => { await Veri.sil("malzeme", m.id); toast("Silindi"); git("malzeme"); }, true);
+    const sl = u.querySelector("#mSil"); if (sl) sl.onclick = () => izinVar("silme") && onay(`${m.ad} silinsin mi? (Eski işlemlerdeki kayıtlar durur.)`, async () => { await Veri.sil("malzeme", m.id); toast("Silindi"); git("malzeme"); }, true);
   },
   kasa(u) {
     ["kA", "kB"].forEach(k => { const e = u.querySelector("#" + k); if (e) e.onchange = () => { KF[k === "kA" ? "a" : "b"] = e.value; ciz(); }; });
@@ -619,6 +620,7 @@ const EYLEM = {
     });
   },
   kategori() {
+    if (!izinVar("kategori değişikliği")) return;
     const ciz3 = s => { s.querySelector("#cL").innerHTML = gruplar().map((g, i) => `<div class="s"><input class="girdi" data-ci="${i}" data-eski="${esc(g)}" value="${esc(g)}" style="padding:9px 12px"><span class="kucuk" style="white-space:nowrap;margin:0 6px">${A().malzeme.filter(m => m.grup === g).length} kalem</span><button data-csil="${i}" style="color:var(--tehlike);font-size:20px;padding:0 8px" aria-label="Sil">×</button></div>`).join(""); };
     perde(`<h3>Malzeme kategorileri</h3><p class="kucuk">Adını değiştirince o kategorideki malzemeler de değişir. İçinde malzeme olan kategori silinince malzemeleri ilk kategoriye taşınır.</p><div class="kart ayar" style="padding:2px 14px" id="cL"></div><button class="btn ince" id="cE">＋ Kategori ekle</button><button class="btn koyu" id="cK">Kaydet</button>`, s => {
       ciz3(s);
