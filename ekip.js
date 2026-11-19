@@ -95,6 +95,7 @@ const Ekip = (() => {
   async function kisiBirlestir(a, b) {          // b'nin işlemleri a'ya geçer, b silinir
     for (const i of Veri.M.islem.filter(x => x.hastaId === b.id)) { i.hastaId = a.id; await Veri.kaydet("islem", i); }
     const birles = (x, y) => [x, y].map(v => String(v || "").trim()).filter(Boolean).filter((v, k, arr) => arr.findIndex(w => kucuk(w) === kucuk(v)) === k).join(" · ");
+    a.kurler = [...(a.kurler || []), ...(b.kurler || []).filter(k => !(a.kurler || []).some(x => x.id === k.id))];          // 1.3.0: kürler de geçer
     Object.assign(a, {tel: a.tel || b.tel, tc: a.tc || b.tc, dogum: a.dogum || b.dogum, alerji: birles(a.alerji, b.alerji), not: birles(a.not, b.not), ilk: [a.ilk, b.ilk].filter(Boolean).sort()[0] || a.ilk});
     await Veri.kaydet("hasta", a); await Veri.sil("hasta", b.id);
   }

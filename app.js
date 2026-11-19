@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.2.0";
+const SURUM = "1.3.0";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -200,7 +200,11 @@ function kisiCiftleri() {
 const islemler = () => A().islem.slice().sort((a, b) => b.ts.localeCompare(a.ts));
 const hastaBul = id => A().hasta.find(h => h.id === id);
 const hastaIslem = id => islemler().filter(i => i.hastaId === id);
-const kalemYazi = i => (i.kalemler || []).map(k => k.ad + (k.adet > 1 ? " ×" + k.adet : "")).join(" · ");
+const kalemYazi = i => (i.kalemler || []).map(k => k.ad + (k.hastadan ? " (hastanın)" : "") + (k.adet > 1 ? " ×" + k.adet : "")).join(" · ");
+const gunFark = (a, b) => Math.round((new Date(b.slice(0, 10) + "T12:00:00") - new Date(a.slice(0, 10) + "T12:00:00")) / 864e5);
+const gunYazi = d => d === bugun() ? "bugün" : d === gunEkle(bugun(), 1) ? "yarın" : tr(d) + " " + GUNLER[new Date(d + "T12:00:00").getDay()];
+const gunSaat = ts => (ts.startsWith(bugun()) ? "bugün" : tr(ts).slice(0, 5)) + " " + saat(ts);
+const virgul = v => String(v).replace(".", ",");
 const kisaYazi = i => { const k = (i.kalemler || []).filter(x => !/enjektör|seti|branül|turnike|pamuk|flaster/i.test(x.ad)); return (k.length ? k : i.kalemler || []).map(x => x.ad.replace(/ \d+ ml$/, "")).slice(0, 3).join(" + "); };
 const borc = id => hastaIslem(id).filter(i => !i.odendi).reduce((s, i) => s + i.toplam, 0);
 const alerjiEslesir = (h, m) => !!(h && m && m.alerji && kucuk(h.alerji).includes(kucuk(m.alerji)));
@@ -218,7 +222,7 @@ async function stokHareket(malId, n, tur, id, perAd) { const h = await Veri.kayd
 async function stokDegistir(kalemler, isaret, islemId) {
   if (isaret > 0) { for (const h of A().hareket.filter(h => h.id.startsWith(`i:${islemId}:`))) await Veri.sil("hareket", h.id); return stokYenile(); }      // işlem silindi: düşüş geri
   for (const [s, k] of (kalemler || []).entries()) {
-    const m = A().malzeme.find(x => x.id === k.malId); if (!m || !m.stokTut) continue;
+    const m = A().malzeme.find(x => x.id === k.malId); if (!m || !m.stokTut || k.hastadan) continue;          // 1.3.0: hastanın getirdiği ilaç stoktan düşmez
     await Veri.kaydet("hareket", {id: `i:${islemId}:${s}`, malId: k.malId, n: -k.adet, tur: "islem", ts: yerel(new Date()).slice(0, 19)});      // kimlik işleme ve sıraya bağlı: her telefonda aynı
   }
   stokYenile();
@@ -327,6 +331,7 @@ function anaEkran() {
   ${seritler()}<main class="ic">
     <div class="kahraman"><small>Bugün kasa</small><b>${tl(kasa)}</b><div class="ikili"><span><b>${hasta}</b> hasta</span><span><b>${bu.length}</b> işlem</span><span><b>${tl(alin)}</b> alınacak</span></div></div>
     <button class="btn ana" data-git="yeni">＋  Yeni işlem</button>
+    ${gelecekKart()}
     <div class="bas">Bugün<button data-git="kasa" style="color:var(--ana);font-weight:600">Kasa ›</button></div>
     ${bu.length ? `<div class="kart liste">${bu.slice(0, 12).map(satirIslem).join("")}</div>` : `<div class="kart bos-durum"><b>Bugün henüz işlem yok</b>İlk hastanız gelince "Yeni işlem"e dokunun.</div>`}
     ${su.slice(0, 3).map(x => `<button class="kart" data-git="malzeme/${x.m.id}" style="display:flex;gap:10px;align-items:center;padding:12px 14px;text-align:left"><span class="et ${x.tur === "uy" ? "e-uy" : "e-teh"}">${x.tur === "uy" ? "Stok" : "SKT"}</span><span style="font-size:13.5px;flex:1">${esc(x.yazi)}</span><span style="color:var(--ana);font-weight:600;font-size:13px">Gör ›</span></button>`).join("")}
@@ -338,8 +343,9 @@ function satirIslem(i) {
 }
 
 // 2-3 · yeni işlem
-const YENI = {hastaId: "", ad: "", adet: {}, grup: "Sık", tutarElle: null, odeme: "", neden: "", not: "", tel: "", tc: "", dogum: "", oneri: false};
-function yeniSifirla(hastaId) { Object.assign(YENI, {hastaId: hastaId || "", ad: hastaId ? (hastaBul(hastaId) || {}).ad || "" : "", adet: {}, grup: "Sık", tutarElle: null, odeme: odemeTurleri()[0] || "Nakit", neden: "", not: "", tel: "", tc: "", dogum: "", oneri: false}); }
+const YENI_EK = () => ({kurId: "", kur: null, hastadan: {}, olcum: {tb: "", tk: "", seker: "", ates: ""}, olcumAcik: false, kontrolSec: "", kontrol: "", kontrolNot: ""});
+const YENI = Object.assign({hastaId: "", ad: "", adet: {}, grup: "Sık", tutarElle: null, odeme: "", neden: "", not: "", tel: "", tc: "", dogum: "", oneri: false}, YENI_EK());
+function yeniSifirla(hastaId) { Object.assign(YENI, {hastaId: hastaId || "", ad: hastaId ? (hastaBul(hastaId) || {}).ad || "" : "", adet: {}, grup: "Sık", tutarElle: null, odeme: odemeTurleri()[0] || "Nakit", neden: "", not: "", tel: "", tc: "", dogum: "", oneri: false}, YENI_EK()); }
 function yeniEkran(p) {
   if (p === "sifirla" || (p && p !== YENI.hastaId && hastaBul(p))) { yeniSifirla(p === "sifirla" ? "" : p); history.replaceState(null, "", "#yeni"); }
   const h = hastaBul(YENI.hastaId), d = new Date();
@@ -363,6 +369,8 @@ function yeniIc() {
     }
     if (!YENI.yeniHasta) return giris + `<div id="yAlt">` + html + `<div class="bos-durum">Hastanın adını yazın. Daha önce geldiyse listeden seçin; alerjisi ve son gelişi görünür.</div></div>`;
   } else {
+    const kk = YENI.kurId ? (h.kurler || []).find(x => x.id === YENI.kurId) : null;
+    if (kk) html += `<div class="serit ana" style="margin:0">💉 ${esc(kk.ad)} · bugün ${kurDurum(h, kk).n + 1}. seans / ${kk.toplam}${kk.pesin ? " · ücreti peşin alındı, 0 ₺" : ""}<button data-kurcik>Kürden çıkar</button></div>`;
     if (h.alerji) html += `<div class="uyari-kutu">⚠ ${esc(h.alerji)}</div>`;
     const s = hastaIslem(h.id)[0];
     if (s) html += `<div class="kart" style="display:grid;gap:6px"><div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--soluk);font-weight:600"><span>SON GELİŞ · ${tr(s.ts)}</span><button data-git="hasta/${h.id}" style="color:var(--ana);font-weight:600">Hasta kartı ›</button></div>
@@ -372,15 +380,17 @@ function yeniIc() {
   const M = A().malzeme, sik = M.filter(m => m.sik);
   const goster = YENI.grup === "Sık" ? (sik.length ? sik : M.slice(0, 8)) : M.filter(m => m.grup === YENI.grup);
   const secili = M.filter(m => YENI.adet[m.id] > 0 && !goster.includes(m));
-  const otom = M.reduce((s, m) => s + (YENI.adet[m.id] || 0) * (+m.satis || 0), 0), top = YENI.tutarElle != null ? YENI.tutarElle : otom;
+  const otom = M.reduce((s, m) => s + (YENI.adet[m.id] || 0) * (YENI.hastadan[m.id] ? 0 : +m.satis || 0), 0), top = YENI.tutarElle != null ? YENI.tutarElle : yeniKurTutar(h, otom);
   const kalem = Object.values(YENI.adet).filter(x => x > 0).length;
   html += `<label>Geliş nedeni${HA.neden ? " *" : " (isteğe bağlı)"}<input class="girdi" id="yNeden" value="${esc(YENI.neden)}" placeholder="Şikâyet ya da tanı"></label>
     <div class="cips">${["Sık", ...gruplar()].map(g => `<button class="cip ${YENI.grup === g ? "on" : ""}" data-grup="${g}">${g === "Sık" ? "Sık kullanılan" : g.replace(" / ampul", "")}</button>`).join("")}</div>
     <div class="kart" style="padding:4px 14px">${[...secili, ...goster].map(m => {
       const n = YENI.adet[m.id] || 0, al = alerjiEslesir(h, m);
-      return `<div class="mal"><div class="ad">${esc(m.ad)}<small>${tl(m.satis)}${m.stokTut ? " · stok " + m.stok : ""}${al ? ` · <span class="et e-teh">alerji uyarısı</span>` : ""}</small></div><div class="adet ${n ? "" : "sif"}"><button data-eksi="${m.id}" aria-label="Azalt">−</button><span class="n">${n}</span><button data-arti="${m.id}" aria-label="Artır">＋</button></div></div>`; }).join("") || `<div class="bos-durum">Bu grupta malzeme yok. Malzeme ekranından ekleyin.</div>`}</div>
+      const hd = !!YENI.hastadan[m.id], ilac = m.stokTut || +m.alis > 0;
+      return `<div class="mal"><div class="ad">${esc(m.ad)}<small>${hd ? "hastanın · 0 ₺" : tl(m.satis)}${m.stokTut ? " · stok " + m.stok : ""}${al ? ` · <span class="et e-teh">alerji uyarısı</span>` : ""}</small>${n && ilac ? `<button class="cip ${hd ? "on" : ""}" data-hastadan="${m.id}" style="font-size:11.5px;padding:3px 10px;margin-top:5px;display:inline-block">💊 ${hd ? "Hastanın ilacı ✓" : "Hasta kendi getirdi"}</button>` : ""}</div><div class="adet ${n ? "" : "sif"}"><button data-eksi="${m.id}" aria-label="Azalt">−</button><span class="n">${n}</span><button data-arti="${m.id}" aria-label="Artır">＋</button></div></div>`; }).join("") || `<div class="bos-durum">Bu grupta malzeme yok. Malzeme ekranından ekleyin.</div>`}</div>
     <label>Not<input class="girdi" id="yNot" value="${esc(YENI.not)}" placeholder="Kısa not (isteğe bağlı)"></label>
-    <div class="toplam"><div><small>Toplam · ${kalem} kalem${YENI.tutarElle != null ? " · elle" : ""}</small><br><button data-tutar style="color:#fff"><b>${tl(top)}</b> <span style="font-size:12px;opacity:.7">✎</span></button></div>
+    ${yeniEkler(h)}
+    <div class="toplam"><div><small>Toplam · ${kalem} kalem${YENI.tutarElle != null ? " · elle" : YENI.kur && YENI.kur.pesin ? " · " + YENI.kur.toplam + " seans peşin" : ""}</small><br><button data-tutar style="color:#fff"><b>${tl(top)}</b> <span style="font-size:12px;opacity:.7">✎</span></button></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:62%">${[...odemeTurleri(), "Sonra"].map(o => `<button class="cip" data-odeme="${esc(o)}" style="${YENI.odeme === o ? "background:#fff;color:var(--yazi)" : "background:rgba(255,255,255,.12);color:#fff;box-shadow:none"}">${esc(o)}</button>`).join("")}</div></div>
     <button class="btn koyu" data-kaydet>Kaydet</button>`;
   return giris ? giris + `<div id="yAlt">` + html + `</div>` : html;
@@ -394,14 +404,23 @@ async function yeniKaydet() {
     if (ad.length < 2) return toast("Hastanın adını yazın");
     h = await Veri.kaydet("hasta", {ad, tel: YENI.tel.trim(), tc: YENI.tc.trim(), dogum: YENI.dogum.trim(), alerji: "", not: "", ilk: yerel(new Date())});
   }
-  const kalemler = A().malzeme.filter(m => YENI.adet[m.id] > 0).map(m => ({malId: m.id, ad: m.ad, adet: YENI.adet[m.id], fiyat: +m.satis || 0, alis: +m.alis || 0}));
-  if (!kalemler.length && YENI.tutarElle == null) return toast("En az bir malzeme ya da hizmet seçin");
+  const kalemler = A().malzeme.filter(m => YENI.adet[m.id] > 0).map(m => { const hd = !!YENI.hastadan[m.id]; return Object.assign({malId: m.id, ad: m.ad, adet: YENI.adet[m.id], fiyat: hd ? 0 : +m.satis || 0, alis: hd ? 0 : +m.alis || 0}, hd ? {hastadan: true} : {}); });
+  const olc = olcumTemiz(YENI.olcum);
+  if (!kalemler.length && YENI.tutarElle == null && !olc) return toast("En az bir malzeme ya da hizmet seçin");
   if (HA.neden && !YENI.neden.trim()) return toast("Geliş nedenini yazın");
-  const otom = kalemler.reduce((s, k) => s + k.adet * k.fiyat, 0);
-  const i = await Veri.kaydet("islem", {hastaId: h.id, ts: yerel(new Date()).slice(0, 19), neden: YENI.neden.trim(), kalemler, toplam: YENI.tutarElle != null ? YENI.tutarElle : otom,
-    odeme: YENI.odeme === "Sonra" ? "" : YENI.odeme, odendi: YENI.odeme !== "Sonra", not: YENI.not.trim(), ...(personelVar() ? {per: kimSu().id, perAd: kimSu().ad} : {})});
+  if (YENI.kur && (!(YENI.kur.toplam >= 2) || YENI.kur.toplam > 60)) return toast("Kürün seans sayısını seçin (2–60)");
+  if (YENI.kontrolSec !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(YENI.kontrol || "")) return toast("Kontrol tarihini seçin");
+  const otom = kalemler.reduce((s, k) => s + k.adet * k.fiyat, 0), ts = yerel(new Date()).slice(0, 19);
+  let kur = null, kurSira = 0;
+  if (YENI.kurId) { kur = (h.kurler || []).find(k => k.id === YENI.kurId) || null; if (kur) kurSira = kurSeans(h.id, kur.id).length + 1; }
+  else if (YENI.kur) { kur = {id: Veri.yeniId(), ad: YENI.kur.ad.trim() || "Kür", toplam: YENI.kur.toplam, aralik: YENI.kur.aralik, pesin: !!YENI.kur.pesin, basla: ts}; h.kurler = [...(h.kurler || []), kur]; await Veri.kaydet("hasta", h); kurSira = 1; }
+  const toplam = YENI.tutarElle != null ? YENI.tutarElle : yeniKurTutar(h, otom);
+  const kontrol = YENI.kontrolSec !== "" ? YENI.kontrol : "";
+  const i = await Veri.kaydet("islem", {hastaId: h.id, ts, neden: YENI.neden.trim(), kalemler, toplam,
+    odeme: YENI.odeme === "Sonra" || !toplam ? "" : YENI.odeme, odendi: YENI.odeme !== "Sonra" || !toplam, not: YENI.not.trim(), ...(personelVar() ? {per: kimSu().id, perAd: kimSu().ad} : {}),
+    ...(kur ? {kurId: kur.id, kurSira} : {}), ...(olc ? {olcum: olc} : {}), ...(kontrol ? {kontrol, kontrolNot: YENI.kontrolNot.trim() || "Kontrol"} : {})});
   await stokDegistir(i.kalemler, -1, i.id);
-  toast(`${h.ad} · ${tl(i.toplam)} kaydedildi`); yeniSifirla(); git("hasta/" + h.id);
+  toast(`${h.ad} · ${tl(i.toplam)} kaydedildi${kur ? ` · ${kur.ad} ${kurSira}/${kur.toplam}` : ""}${kontrol ? " · kontrol " + tr(kontrol) : ""}`); yeniSifirla(); git("hasta/" + h.id);
   driveYedekle(true);
 }
 
@@ -415,8 +434,9 @@ function hastaEkran(id) {
     <div class="uc"><div class="kart"><small>Geliş</small><b>${is.length}</b></div><div class="kart"><small>Ödenen</small><b>${tl(od)}</b></div><div class="kart"><small>Borç</small><b style="color:${b ? "var(--uyari)" : "var(--iyi)"}">${tl(b)}</b></div></div>
     <div style="display:flex;gap:8px"><button class="btn ana" data-git="yeni/${h.id}" style="flex:1;padding:12px;font-size:15px">＋ Yeni işlem</button>
       ${wa ? `<a class="btn ince" href="https://wa.me/${wa}" target="_blank" rel="noopener" style="width:auto;padding:12px 16px;text-decoration:none">💬</a><a class="btn ince" href="tel:${esc(h.tel)}" style="width:auto;padding:12px 16px;text-decoration:none">☎</a>` : ""}</div>
+    ${kontrolSerit(h)}${hastaKurKart(h)}${olcumKart(h)}
     <div class="bas">Gelişler</div>
-    ${is.length ? `<div class="kart zaman">${is.map(i => `<button class="g" data-isl="${i.id}" style="text-align:left;width:100%"><div class="tar"><b>${i.ts.slice(8, 10)}</b><small>${AYLAR[+i.ts.slice(5, 7) - 1]}${i.ts.slice(0, 4) !== bugun().slice(0, 4) ? " " + i.ts.slice(2, 4) : ""}</small></div><div class="d">${i.neden ? `<span class="neden">${esc(i.neden)}</span><br>` : ""}<b>${esc(kisaYazi(i) || "İşlem")}</b><p>${esc(kalemYazi(i))}${i.not ? " · " + esc(i.not) : ""}</p><div class="tut">${tl(i.toplam)} · ${i.odendi ? esc(i.odeme || "ödendi") : `<span class="et e-uy">ödenmedi</span>`}</div></div></button>`).join("")}</div>` : `<div class="kart bos-durum">Henüz işlem yok.</div>`}
+    ${is.length ? `<div class="kart zaman">${is.map(i => `<button class="g" data-isl="${i.id}" style="text-align:left;width:100%"><div class="tar"><b>${i.ts.slice(8, 10)}</b><small>${AYLAR[+i.ts.slice(5, 7) - 1]}${i.ts.slice(0, 4) !== bugun().slice(0, 4) ? " " + i.ts.slice(2, 4) : ""}</small></div><div class="d">${i.neden ? `<span class="neden">${esc(i.neden)}</span><br>` : ""}<b>${esc(kisaYazi(i) || "İşlem")}</b><p>${esc(kalemYazi(i))}${i.not ? " · " + esc(i.not) : ""}${i.olcum ? " · 🩺 " + esc(olcumYazi(i.olcum)) : ""}${i.kurId ? " · 💉 " + i.kurSira + ". seans" : ""}${i.kontrol ? " · 📅 kontrol " + tr(i.kontrol) : ""}</p><div class="tut">${tl(i.toplam)} · ${i.odendi ? esc(i.odeme || "ödendi") : `<span class="et e-uy">ödenmedi</span>`}</div></div></button>`).join("")}</div>` : `<div class="kart bos-durum">Henüz işlem yok.</div>`}
   </main>${altCubuk("hastalar")}`;
 }
 function hastaDuzenle(id) {
@@ -446,13 +466,16 @@ function hastaDuzenle(id) {
 function islemDetay(iid) {
   const i = A().islem.find(x => x.id === iid); if (!i) return;
   perde(`<h3>${tr(i.ts)} · ${saat(i.ts)}</h3>${i.neden ? `<div style="color:var(--vurgu);font-weight:700">${esc(i.neden)}</div>` : ""}
-    <div class="kart liste">${(i.kalemler || []).map(k => `<div class="s" style="cursor:default"><div class="m"><b>${esc(k.ad)}</b><small>${k.adet} × ${tl(k.fiyat)}</small></div><div class="t">${tl(k.adet * k.fiyat)}</div></div>`).join("") || `<div class="bos-durum">Kalem yok</div>`}</div>
+    <div class="kart liste">${(i.kalemler || []).map(k => `<div class="s" style="cursor:default"><div class="m"><b>${esc(k.ad)}</b><small>${k.hastadan ? "💊 hastanın ilacı · stoktan düşmedi" : k.adet + " × " + tl(k.fiyat)}</small></div><div class="t">${tl(k.adet * k.fiyat)}</div></div>`).join("") || `<div class="bos-durum">Kalem yok</div>`}</div>
+    ${i.olcum ? `<div class="kart kucuk">🩺 ${esc(olcumYazi(i.olcum))}</div>` : ""}${i.kurId ? `<div class="kart kucuk">💉 ${esc(((hastaBul(i.hastaId) || {}).kurler || []).filter(k => k.id === i.kurId).map(k => k.ad + " · " + i.kurSira + ". seans / " + k.toplam)[0] || i.kurSira + ". seans")}</div>` : ""}
+    ${i.kontrol ? `<div class="kart kucuk" style="display:flex;align-items:center;gap:8px">📅 Kontrol ${esc(gunYazi(i.kontrol))} · ${esc(i.kontrolNot || "")}${i.kontrolKapandi ? " · kapatıldı" : `<button id="iKK" style="margin-left:auto;color:var(--ana);font-weight:700">Kontrolü kapat</button>`}</div>` : ""}
     ${i.not ? `<div class="kart kucuk">📝 ${esc(i.not)}</div>` : ""}${i.perAd ? `<div class="kucuk">Kaydeden: <b>${esc(i.perAd)}</b></div>` : ""}
     <div class="toplam"><div><small>Toplam</small><br><b>${tl(i.toplam)}</b></div><span>${i.odendi ? esc(i.odeme || "Ödendi") : "Ödenmedi"}</span></div>
     ${i.odendi ? "" : `<div class="bas">Ödeme alındı</div><div class="cips">${odemeTurleri().map(o => `<button class="cip" data-od="${esc(o)}">${esc(o)}</button>`).join("")}</div>`}
     ${yon() ? `<button class="btn ince" id="iSil" style="color:var(--tehlike)">İşlemi sil (stok geri eklenir)</button>` : `<p class="kucuk">Yanlış girilen işlemi yönetici siler.</p>`}<button class="btn ince" data-kapat>Kapat</button>`, s => {
     s.querySelector("[data-kapat]").onclick = kapat;
-    s.querySelectorAll("[data-od]").forEach(b => b.onclick = async () => { if (!izinVar("ödeme kaydı")) return; Object.assign(i, {odendi: true, odeme: b.dataset.od, odemeTs: yerel(new Date()).slice(0, 19)}); await Veri.kaydet("islem", i); kapat(); toast("Ödendi olarak işaretlendi"); ciz(); });
+    s.querySelectorAll("[data-od]").forEach(b => b.onclick = async () => { if (!izinVar("ödeme kaydı")) return; Object.assign(i, {odendi: true, odeme: b.dataset.od, odemeTs: yerel(new Date()).slice(0, 19)}, personelVar() ? {odemePer: kimSu().id, odemePerAd: kimSu().ad} : {}); await Veri.kaydet("islem", i); kapat(); toast("Ödendi olarak işaretlendi"); ciz(); });
+    const kk = s.querySelector("#iKK"); if (kk) kk.onclick = async () => { if (!izinVar("kontrol kapatma")) return; i.kontrolKapandi = true; await Veri.kaydet("islem", i); kapat(); toast("Kontrol kapatıldı"); ciz(); };
     const isl = s.querySelector("#iSil"); if (isl) isl.onclick = () => izinVar("silme") && onay("Bu işlem silinsin mi?", async () => { await stokDegistir(i.kalemler, +1, i.id); await Veri.sil("islem", i.id); toast("İşlem silindi"); ciz(); }, true);
   });
 }
@@ -482,6 +505,7 @@ function malzemelerEkran() {
   const M = A().malzeme, deger = M.filter(m => m.stokTut).reduce((s, m) => s + (+m.stok || 0) * (+m.alis || 0), 0);
   return `${ust("Malzemeler", `${M.length} kalem${yon() ? " · stok değeri " + tl(deger) : ""}`, false, yon() ? `<button class="yuv" style="background:var(--vurgu)" data-git="malzeme/yeni" aria-label="Yeni malzeme">＋</button>` : "")}
   ${seritler()}<main class="ic" data-baglan="malzemeler"><label class="ara">⌕ <input id="mAra" value="${esc(MF.q)}" placeholder="Malzeme ara" autocomplete="off"></label>
+    <button class="btn ince" data-a="siparis" style="padding:10px">📋 Depoya sipariş listesi${(() => { const n = siparisAdaylari().length; return n ? ` · <b style="color:var(--uyari)">${n} malzeme azaldı</b>` : ""; })()}</button>
     <div class="cips">${["Hepsi", ...gruplar()].map(g => `<button class="cip ${MF.g === g ? "on" : ""}" data-mg="${g}">${g.replace(" / ampul", "")}</button>`).join("")}</div>
     <div id="mListe">${malzemeListe()}</div></main>${altCubuk("malzeme")}`;
 }
@@ -525,7 +549,7 @@ function kasaAraligi() {
 function kasaEkran() {
   const [a, b] = kasaAraligi(), bitis = b + "T99", is = A().islem.filter(i => i.ts >= a && i.ts <= bitis);
   const od = is.filter(i => i.odendi), top = od.reduce((s, i) => s + i.toplam, 0);
-  const tur = {}; od.forEach(i => { tur[i.odeme || "Diğer"] = (tur[i.odeme || "Diğer"] || 0) + i.toplam; });
+  const tur = {}; od.filter(i => i.toplam).forEach(i => { tur[i.odeme || "Diğer"] = (tur[i.odeme || "Diğer"] || 0) + i.toplam; });
   const alin = is.filter(i => !i.odendi).reduce((s, i) => s + i.toplam, 0), gider = is.reduce((s, i) => s + (i.kalemler || []).reduce((x, k) => x + k.adet * (k.alis || 0), 0), 0);
   const hasta = new Set(is.map(i => i.hastaId)).size, t = bugun();
   const gunler = [...Array(7)].map((_, k) => gunEkle(t, k - 6)), gt = gunler.map(g => A().islem.filter(i => i.odendi && i.ts.startsWith(g)).reduce((s, i) => s + i.toplam, 0)), mx = Math.max(1, ...gt);
@@ -536,6 +560,7 @@ function kasaEkran() {
     <div class="cips">${[["gun", "Bugün"], ["hafta", "Bu hafta"], ["ay", "Bu ay"], ["ozel", "Tarih seç"]].map(([k, x]) => `<button class="cip ${KF.d === k ? "on" : ""}" data-kd="${k}">${x}</button>`).join("")}</div>
     ${KF.d === "ozel" ? `<div class="ikili-g"><label>Başlangıç<input class="girdi" type="date" id="kA" value="${a}"></label><label>Bitiş<input class="girdi" type="date" id="kB" value="${b}"></label></div>` : ""}
     <div class="kahraman"><small>${esc(baslik)} toplamı</small><b>${tl(top)}</b><div class="ikili" style="flex-wrap:wrap;gap:6px 16px">${Object.entries(tur).map(([k, v]) => `<span>${esc(k)} <b>${tl(v).replace(" ₺", "")}</b></span>`).join("") || "<span>Henüz tahsilat yok</span>"}</div></div>
+    ${teslimKart()}
     <div class="kart"><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--soluk)"><span>Son 7 gün</span><span>Bugün ${tl(gt[6])}</span></div>
       <div class="cubuk">${gt.map((v, k) => `<span class="${k === 6 ? "bug" : ""}" style="height:${Math.max(4, Math.round(v / mx * 100))}%" title="${tl(v)}"></span>`).join("")}</div>
       <div class="cubuk-alt">${gunler.map((g, k) => `<span>${k === 6 ? "Bugün" : GUN_KISA[new Date(g + "T12:00:00").getDay()]}</span>`).join("")}</div></div>
@@ -554,7 +579,7 @@ function kasaOzeti() {
   const [a, b] = kasaAraligi(), bitis = b + "T99", is = A().islem.filter(i => i.ts >= a && i.ts <= bitis), t = bugun();
   const od = is.filter(i => i.odendi), top = od.reduce((s, i) => s + i.toplam, 0), alin = is.filter(i => !i.odendi).reduce((s, i) => s + i.toplam, 0);
   const gider = is.reduce((s, i) => s + (i.kalemler || []).reduce((x, k) => x + k.adet * (k.alis || 0), 0), 0), kar = top - gider;
-  const tur = {}; od.forEach(i => { tur[i.odeme || "Diğer"] = (tur[i.odeme || "Diğer"] || 0) + i.toplam; });
+  const tur = {}; od.filter(i => i.toplam).forEach(i => { tur[i.odeme || "Diğer"] = (tur[i.odeme || "Diğer"] || 0) + i.toplam; });
   const say = {}; is.forEach(i => (i.kalemler || []).forEach(k => { if (!say[k.ad]) say[k.ad] = {n: 0, t: 0}; say[k.ad].n += k.adet; say[k.ad].t += k.adet * k.fiyat; }));
   const enCok = Object.entries(say).sort((x, y) => y[1].t - x[1].t).slice(0, 3);
   const donem = KF.d === "gun" ? "Bugün (" + tr(t) + ")" : KF.d === "hafta" ? "Bu hafta (" + tr(a) + " – " + tr(b) + ")" : KF.d === "ay" ? AY_TAM[+t.slice(5, 7) - 1] + " " + t.slice(0, 4) : tr(a) + " – " + tr(b);
@@ -571,8 +596,8 @@ async function excelAktar() {
   const [a, b] = kasaAraligi(), bitis = b + "T99";
   const is = A().islem.filter(i => i.ts >= a && i.ts <= bitis).sort((x, y) => x.ts.localeCompare(y.ts));
   const q = v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-  const satir = [["Tarih", "Saat", "Hasta", "Telefon", "Geliş nedeni", "Yapılanlar", "Tutar", "Ödeme", "Not", "Personel"].map(q).join(";")];
-  for (const i of is) { const h = hastaBul(i.hastaId) || {}; satir.push([tr(i.ts), saat(i.ts), h.ad, h.tel, i.neden, kalemYazi(i), String(i.toplam).replace(".", ","), i.odendi ? i.odeme : "Ödenmedi", i.not, i.perAd || ""].map(q).join(";")); }
+  const satir = [["Tarih", "Saat", "Hasta", "Telefon", "Geliş nedeni", "Yapılanlar", "Tutar", "Ödeme", "Not", "Personel", "Ölçüm", "Kontrol"].map(q).join(";")];
+  for (const i of is) { const h = hastaBul(i.hastaId) || {}; satir.push([tr(i.ts), saat(i.ts), h.ad, h.tel, i.neden, kalemYazi(i), String(i.toplam).replace(".", ","), i.odendi ? i.odeme : "Ödenmedi", i.not, i.perAd || "", i.olcum ? olcumYazi(i.olcum) : "", i.kontrol ? tr(i.kontrol) : ""].map(q).join(";")); }
   await dosyaVer(`KlinikDefteri-${a}-${b}.csv`, "﻿" + satir.join("\r\n"), "text/csv");
 }
 
@@ -633,6 +658,234 @@ function stokGirisi(m) {
       await stokHareket(m.id, n, "giris", "", personelVar() ? kimSu().ad : ""); kapat(); toast(`${n} adet eklendi · stok ${m.stok}`); ciz(); }; });
 }
 
+// ---------------------------------------------------------------- 1.3.0 kür (seri tedavi), ölçüm, kontrol hatırlatma
+// Kür hasta kaydında (h.kurler), seanslar işlem kaydında (kurId, kurSira); ölçüm ve kontrol işlemde — ekip birleştirmesi bunları kendiliğinden taşır.
+const ARALIK = {1: "Her gün", 2: "2 günde bir", 7: "Haftada bir"};
+const aralikYazi = n => ARALIK[n] || n + " günde bir";
+const kurSeans = (hId, kId) => A().islem.filter(i => i.hastaId === hId && i.kurId === kId).sort((a, b) => a.ts.localeCompare(b.ts));
+function kurDurum(h, k) {
+  const s = kurSeans(h.id, k.id), n = s.length, son = s[n - 1], t = bugun();
+  const bitti = !!k.kapandi || n >= k.toplam;
+  const sonraki = son ? gunEkle(son.ts.slice(0, 10), +k.aralik || 1) : (k.basla || t).slice(0, 10);
+  return {n, son, bitti, sonraki, bugunGeldi: !!son && son.ts.startsWith(t), gecikme: sonraki < t ? gunFark(sonraki, t) : 0};
+}
+function kurDoldur(h, k) {          // sonraki seans: son seansın malzemeleri tek dokunuşla
+  const s = kurSeans(h.id, k.id), son = s[s.length - 1];
+  YENI.adet = {}; YENI.hastadan = {};
+  for (const x of (son && son.kalemler) || []) if (A().malzeme.some(m => m.id === x.malId)) { YENI.adet[x.malId] = x.adet; if (x.hastadan) YENI.hastadan[x.malId] = true; }
+  YENI.kurId = k.id; YENI.kur = null; YENI.tutarElle = null; if (!YENI.neden && son) YENI.neden = son.neden || "";
+}
+function yeniKurTutar(h, otom) {
+  if (YENI.kurId && h) { const k = (h.kurler || []).find(x => x.id === YENI.kurId); if (k && k.pesin) return 0; }
+  if (YENI.kur && YENI.kur.pesin) return otom * (YENI.kur.toplam || 1);
+  return otom;
+}
+const olcumSayi = v => { const n = sayi(v); return n > 0 ? Math.round(n * 10) / 10 : 0; };
+function olcumTemiz(o) { const x = {}; for (const k of ["tb", "tk", "seker", "ates"]) { const v = olcumSayi(o && o[k]); if (v) x[k] = v; } return Object.keys(x).length ? x : null; }
+const olcumVar = o => !!olcumTemiz(o);
+const olcumYazi = o => [o.tb || o.tk ? "Tansiyon " + virgul(o.tb || "?") + "/" + virgul(o.tk || "?") : "", o.seker ? "Şeker " + virgul(o.seker) : "", o.ates ? "Ateş " + virgul(o.ates) + "°" : ""].filter(Boolean).join(" · ");
+const cm = v => v >= 40 ? v / 10 : v;          // 130/80 yazılsa da 13/8 gibi değerlendirilir
+const tansiyonYuksek = o => cm(o.tb || 0) >= 14 || cm(o.tk || 0) >= 9;
+const sekerEt = v => v < 70 ? ["düşük", "e-teh"] : v <= 99 ? ["normal", "e-iyi"] : v <= 125 ? ["hafif yüksek", "e-uy"] : ["yüksek", "e-teh"];
+const atesEt = v => v < 37.5 ? ["normal", "e-iyi"] : v < 38.5 ? ["ateş", "e-uy"] : ["yüksek ateş", "e-teh"];
+
+function yeniEkler(h) {
+  let s = "";
+  const k = YENI.kurId && h ? (h.kurler || []).find(x => x.id === YENI.kurId) : null;
+  if (k) { /* seans şeridi ekranın üstünde (yeniIc) */ }
+  else if (YENI.kur) {
+    const K = YENI.kur, std = [3, 5, 7, 10];
+    s += `<div class="kart" style="display:grid;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><b>💉 Kür (seri tedavi)</b><button data-kurkapat style="color:var(--soluk);font-size:13px">✕ Vazgeç</button></div>
+      <p class="kucuk" style="margin:0">Bugünkü işlem 1. seans olur. Sonraki gelişlerde hasta kartında "Bugünkü seansı işle"ye dokunun: aynı malzemeler kendiliğinden gelir. Gelmesi gereken gün hasta ana sayfada listelenir.</p>
+      <label>Kürün adı<input class="girdi" id="yKurAd" value="${esc(K.ad)}" placeholder="Örn. Antibiyotik kürü"></label>
+      <div class="kucuk" style="font-weight:700">Kaç seans</div><div class="cips">${std.map(n => `<button class="cip ${K.toplam === n ? "on" : ""}" data-kurn="${n}">${n}</button>`).join("")}<input class="girdi" id="yKurN" inputmode="numeric" value="${std.includes(K.toplam) ? "" : K.toplam}" placeholder="Diğer" style="width:84px;padding:7px 10px"></div>
+      <div class="kucuk" style="font-weight:700">Ne sıklıkla</div><div class="cips">${Object.entries(ARALIK).map(([n, t]) => `<button class="cip ${K.aralik === +n ? "on" : ""}" data-kura="${n}">${t}</button>`).join("")}</div>
+      <div class="kucuk" style="font-weight:700">Ücret</div><div class="cips"><button class="cip ${!K.pesin ? "on" : ""}" data-kurp="0">Her gelişte alınır</button><button class="cip ${K.pesin ? "on" : ""}" data-kurp="1">Tamamı şimdi (peşin)</button></div>
+      <p class="kucuk" style="margin:0">${K.pesin ? `Peşin: bugün ${K.toplam} seansın ücreti birden alınır, sonraki seanslar 0 ₺ yazılır.` : "Her seansta o günün ücreti alınır."} Malzeme stoktan her seansta düşer.</p></div>`;
+  } else {
+    const aktif = h ? (h.kurler || []).filter(x => !kurDurum(h, x).bitti) : [];
+    s += aktif.map(x => { const d = kurDurum(h, x); return `<div class="serit ana" style="margin:0">💉 Devam eden kür: ${esc(x.ad)} · ${d.n}/${x.toplam}<button data-kursec="${x.id}">${d.n + 1}. seans olarak işle</button></div>`; }).join("");
+    s += `<button class="btn ince" data-kurbasla style="padding:10px;font-size:14.5px">💉 Kür başlat (seri tedavi, ör. 5 gün iğne)</button>`;
+  }
+  const oto = A().malzeme.some(m => YENI.adet[m.id] > 0 && /tansiyon|şeker|seker|ateş|ates/i.test(m.ad));
+  if (YENI.olcumAcik || oto || olcumVar(YENI.olcum)) {
+    const O = YENI.olcum;
+    s += `<div class="kart" style="display:grid;gap:8px"><b>🩺 Ölçüm <span class="kucuk" style="font-weight:400">· boş bırakılabilir · hasta kartında grafik olur</span></b>
+      <div class="ikili-g"><label>Tansiyon büyük<input class="girdi" id="yTb" inputmode="decimal" value="${esc(O.tb)}" placeholder="Örn. 13"></label><label>Tansiyon küçük<input class="girdi" id="yTk" inputmode="decimal" value="${esc(O.tk)}" placeholder="Örn. 8"></label></div>
+      <div class="ikili-g"><label>Şeker (mg/dL)<input class="girdi" id="ySeker" inputmode="decimal" value="${esc(O.seker)}" placeholder="Örn. 110"></label><label>Ateş (°C)<input class="girdi" id="yAtes" inputmode="decimal" value="${esc(O.ates)}" placeholder="Örn. 36,8"></label></div></div>`;
+  } else s += `<button class="btn ince" data-olcac style="padding:10px;font-size:14.5px">🩺 Ölçüm ekle (tansiyon, şeker, ateş)</button>`;
+  const ks = YENI.kontrolSec;
+  s += `<div class="kucuk" style="font-weight:700;margin:2px 2px -4px">📅 Kontrol · hasta tekrar gelecek mi?</div>
+    <div class="cips">${[["", "Kontrol yok"], [3, "3 gün sonra"], [7, "1 hafta"], [30, "1 ay"], ["t", "Tarih seç"]].map(([v, t]) => `<button class="cip ${String(ks) === String(v) ? "on" : ""}" data-kont="${v}">${t}</button>`).join("")}</div>
+    ${ks !== "" ? `<div class="ikili-g">${ks === "t" ? `<label>Tarih<input class="girdi" type="date" id="yKTarih" min="${bugun()}" value="${esc(YENI.kontrol)}"></label>` : `<div class="kucuk" style="align-self:end;padding-bottom:12px">Tarih: <b>${esc(gunYazi(YENI.kontrol))}</b></div>`}<label>Ne için<input class="girdi" id="yKNot" value="${esc(YENI.kontrolNot)}" placeholder="Örn. pansuman kontrolü"></label></div>
+      <p class="kucuk" style="margin:-4px 2px 0">O gün hasta ana sayfada "Bugün gelmesi gerekenler"de çıkar; tek dokunuşla WhatsApp hatırlatması gönderilir.</p>` : ""}`;
+  return s;
+}
+
+// bugün gelmesi gerekenler: kür seansı ve kontrol
+function gelecekler() {
+  const t = bugun(), out = [], sinir = gunEkle(t, -14);
+  for (const h of A().hasta) for (const k of h.kurler || []) {
+    const d = kurDurum(h, k);
+    if (d.bugunGeldi) out.push({h, tur: "kur", k, d, yazi: `${k.ad} · ${d.n}/${k.toplam}`, durum: "geldi"});
+    else if (!d.bitti && d.sonraki <= t && d.sonraki >= sinir) out.push({h, tur: "kur", k, d, yazi: `${k.ad} · ${d.n + 1}. seans / ${k.toplam}`, durum: d.gecikme ? "gecikti" : "bekleniyor", gun: d.gecikme});
+  }
+  for (const i of A().islem) {
+    if (!i.kontrol || i.kontrolKapandi || i.kontrol > t || i.kontrol < sinir) continue;
+    const h = hastaBul(i.hastaId); if (!h) continue;
+    const sonra = A().islem.filter(x => x.hastaId === h.id && x.ts > i.ts);
+    if (sonra.length) { if (sonra.some(x => x.ts.startsWith(t))) out.push({h, tur: "kontrol", i, yazi: i.kontrolNot || "Kontrol", durum: "geldi"}); continue; }
+    out.push({h, tur: "kontrol", i, yazi: i.kontrolNot || "Kontrol", durum: i.kontrol === t ? "bekleniyor" : "gecikti", gun: gunFark(i.kontrol, t)});
+  }
+  const sira = {gecikti: 0, bekleniyor: 1, geldi: 2};
+  return out.sort((a, b) => sira[a.durum] - sira[b.durum] || (b.gun || 0) - (a.gun || 0));
+}
+function hatirlatMetni(x) {
+  const imza = `\n${Veri.ayar("isletmeAd") || ""}${Veri.ayar("isletmeTel") ? " · " + Veri.ayar("isletmeTel") : ""}`;
+  if (x.tur === "kur") return x.durum === "gecikti"
+    ? `Merhaba ${x.h.ad}, ${x.k.ad} için ${x.d.n + 1}. seansınızın günü geçti (${tr(x.d.sonraki)}). Tedavinin yarım kalmaması için en kısa zamanda bekleriz.${imza}`
+    : `Merhaba ${x.h.ad}, bugün ${x.k.ad} için ${x.d.n + 1}. seansınız var. Uygun olduğunuz saatte bekleriz.${imza}`;
+  return x.durum === "gecikti"
+    ? `Merhaba ${x.h.ad}, ${tr(x.i.kontrol)} tarihli ${x.i.kontrolNot || "kontrolünüz"} için sizi bekliyorduk. Uygun olduğunuzda bekleriz.${imza}`
+    : `Merhaba ${x.h.ad}, bugün ${x.i.kontrolNot || "kontrolünüz"} için sizi bekliyoruz. Uygun olduğunuz saatte bekleriz.${imza}`;
+}
+function gelecekKart() {
+  const L = gelecekler(); if (!L.length) return "";
+  const bek = L.filter(x => x.durum !== "geldi").length;
+  return `<div class="bas">Bugün gelmesi gerekenler${bek ? ` · ${bek} kişi bekleniyor` : " · hepsi geldi"}</div><div class="kart liste">${L.slice(0, 20).map(x => {
+    const wa = waNo(x.h.tel), et = x.durum === "geldi" ? ["geldi", "e-iyi"] : x.durum === "gecikti" ? [x.gun + " gün gecikti", "e-teh"] : [x.tur === "kur" ? "henüz gelmedi" : "bugün", "e-uy"];
+    return `<div class="s" data-git="hasta/${x.h.id}"><span class="av ${renk(x.h.ad)}">${esc(bas(x.h.ad))}</span><div class="m"><b>${esc(x.h.ad)}</b><small style="white-space:normal"><span class="et ${et[1]}">${et[0]}</span> ${x.tur === "kur" ? "💉" : "📅"} ${esc(x.yazi)}</small></div>${x.durum !== "geldi" ? (wa ? `<a class="t" href="https://wa.me/${wa}?text=${encodeURIComponent(hatirlatMetni(x))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--ana);font-size:21px;text-decoration:none" aria-label="WhatsApp hatırlatma">💬</a>` : `<span class="t kucuk">telefon yok</span>`) : ""}</div>`; }).join("")}</div>`;
+}
+function hastaKurKart(h) {
+  const wa = waNo(h.tel);
+  return (h.kurler || []).map(k => {
+    const d = kurDurum(h, k);
+    if (d.bitti && !d.bugunGeldi && (!d.son || gunFark(d.son.ts, bugun()) > 30)) return "";
+    const kalan = !d.bitti ? (d.bugunGeldi ? "sonraki seans " + gunYazi(d.sonraki) : d.gecikme ? `${d.n + 1}. seans ${d.gecikme} gün gecikti` : `bugün ${d.n + 1}. seans`) : "";
+    const x = {h, tur: "kur", k, d, durum: d.gecikme ? "gecikti" : "bekleniyor"};
+    return `<div class="kart" style="display:grid;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>💉 ${esc(k.ad)}</b><span class="et ${d.bitti ? "e-iyi" : "e-ana"}">${d.bitti ? (k.kapandi && d.n < k.toplam ? "erken bitirildi · " : "tamamlandı · ") : ""}${d.n} / ${k.toplam}</span></div>
+      <div class="nokta">${[...Array(Math.min(k.toplam, 30))].map((_, j) => `<i class="${j < d.n ? "d" : ""}"></i>`).join("")}</div>
+      <div class="kucuk">${aralikYazi(k.aralik)} · ${k.pesin ? "ücret peşin alındı" : "ücret her gelişte"}${d.son ? " · son seans " + gunSaat(d.son.ts) : ""}${kalan ? ` · <b>${kalan}</b>` : ""}</div>
+      ${d.bitti ? "" : `<div style="display:flex;gap:8px"><button class="btn ana" data-kurseans="${k.id}" data-h="${h.id}" style="padding:10px;font-size:14px;flex:1">＋ ${d.bugunGeldi ? "Bir seans daha işle" : "Bugünkü seansı işle"}</button>${wa && !d.bugunGeldi ? `<a class="btn ince" href="https://wa.me/${wa}?text=${encodeURIComponent(hatirlatMetni(x))}" target="_blank" rel="noopener" style="width:auto;padding:10px 14px;text-decoration:none" aria-label="WhatsApp hatırlatma">💬</a>` : ""}</div>
+        <button class="kucuk" data-kurbitir="${k.id}" data-h="${h.id}" style="color:var(--soluk);justify-self:start">Kürü erken bitir</button>`}</div>`; }).join("");
+}
+function kontrolSerit(h) {
+  const L = A().islem.filter(i => i.hastaId === h.id && i.kontrol && !i.kontrolKapandi && i.kontrol >= gunEkle(bugun(), -14) && !A().islem.some(x => x.hastaId === h.id && x.ts > i.ts));
+  return L.map(i => `<div class="serit ${i.kontrol < bugun() ? "uy" : "ana"}" style="margin:0">📅 Kontrol ${esc(gunYazi(i.kontrol))}${i.kontrol < bugun() ? " (" + gunFark(i.kontrol, bugun()) + " gün geçti)" : ""} · ${esc(i.kontrolNot || "Kontrol")}<button data-kontkapat="${i.id}">Kapat</button></div>`).join("");
+}
+function olcumKart(h) {
+  const L = hastaIslem(h.id).filter(i => i.olcum).reverse();
+  if (!L.length) return "";
+  const T = L.filter(i => i.olcum.tb && i.olcum.tk).slice(-10), S = L.filter(i => i.olcum.seker), F = L.filter(i => i.olcum.ates);
+  let out = "";
+  if (T.length) {
+    const W = 320, H = 110, y = v => Math.max(4, Math.min(H - 4, H - (Math.min(20, Math.max(4, cm(v))) - 4) / 16 * H)), x = j => T.length < 2 ? W / 2 : 12 + j * (W - 24) / (T.length - 1);
+    const son = T[T.length - 1].olcum, enY = T.reduce((a, b) => cm(b.olcum.tb) > cm(a.olcum.tb) ? b : a);
+    out += `<div class="kart" style="display:grid;gap:6px"><div style="display:flex;justify-content:space-between"><b>🩺 Tansiyon</b><span class="kucuk">son ${T.length} ölçüm</span></div>
+      ${T.length < 2 ? `<div class="kucuk">İkinci ölçümden sonra burada grafik çıkar.</div>` : `<svg viewBox="0 0 ${W} ${H}" width="100%" height="110" role="img" aria-label="Tansiyon grafiği"><rect x="0" y="0" width="${W}" height="${y(14)}" fill="var(--tehlike-acik)"/><text x="4" y="12" font-size="10" fill="var(--tehlike)">yüksek (14 ve üstü)</text>
+        <polyline fill="none" stroke="var(--ana)" stroke-width="3" points="${T.map((i, j) => x(j) + "," + y(i.olcum.tb)).join(" ")}"/>
+        <polyline fill="none" stroke="var(--ana)" stroke-opacity=".45" stroke-width="2" stroke-dasharray="4 4" points="${T.map((i, j) => x(j) + "," + y(i.olcum.tk)).join(" ")}"/>
+        ${T.map((i, j) => `<circle cx="${x(j)}" cy="${y(i.olcum.tb)}" r="4.5" fill="${tansiyonYuksek(i.olcum) ? "var(--tehlike)" : "var(--ana)"}"/>`).join("")}</svg>`}
+      <div style="display:flex;justify-content:space-between;font-size:13px;gap:8px"><span>Son: <b style="color:${tansiyonYuksek(son) ? "var(--tehlike)" : "inherit"}">${virgul(son.tb)}/${virgul(son.tk)}</b> · ${esc(gunSaat(T[T.length - 1].ts))}</span><span style="color:${tansiyonYuksek(enY.olcum) ? "var(--tehlike)" : "var(--soluk)"}">En yüksek ${virgul(enY.olcum.tb)}/${virgul(enY.olcum.tk)} · ${tr(enY.ts).slice(0, 5)}</span></div>
+      ${T.length < 2 ? "" : `<div class="kucuk">Düz çizgi büyük, kesik çizgi küçük tansiyon.</div>`}</div>`;
+  }
+  if (S.length) { const v = S[S.length - 1].olcum.seker, e = sekerEt(v);
+    out += `<div class="kart" style="display:grid;gap:6px"><div style="display:flex;justify-content:space-between;align-items:center"><b>🍬 Şeker</b><span class="et ${e[1]}">${e[0]}</span></div><div style="font-size:13.5px">Son <b>${virgul(v)}</b> mg/dL · ${esc(gunSaat(S[S.length - 1].ts))}${S.length > 1 ? ` · önceki: ${S.slice(-4, -1).reverse().map(i => virgul(i.olcum.seker)).join(", ")}` : ""}</div><div class="kucuk">Renk açlık değerine göredir; tok ölçümde yüksek çıkabilir.</div></div>`; }
+  if (F.length) { const v = F[F.length - 1].olcum.ates, e = atesEt(v);
+    out += `<div class="kart" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>🌡 Ateş</b><div style="font-size:13.5px">Son <b>${virgul(v)}°</b> · ${esc(gunSaat(F[F.length - 1].ts))}</div></div><span class="et ${e[1]}">${e[0]}</span></div>`; }
+  return out;
+}
+
+// ---------------------------------------------------------------- 1.3.0 kasa teslimi (vardiya / gün sonu)
+// Beklenen nakit = başta kasada olan para + son teslimden bu yana (personel varsa o kişinin aldığı) nakit ödemeler. Teslimler bu cihazda saklanır.
+const nakitMi = o => kucuk(o || "").includes("nakit");
+const teslimler = () => Veri.ayar("teslimler") || [];
+const kasaAlan = i => i.odemePer || i.per || "y";
+const farkYazi = f => !f ? "tam ✓" : f < 0 ? tl(-f) + " eksik" : tl(f) + " fazla";
+const farkRenk = f => !f ? "var(--iyi)" : f < 0 ? "var(--tehlike)" : "var(--uyari)";
+function teslimHesap(kimId) {
+  const simdi = yerel(new Date()).slice(0, 19);
+  const son = teslimler().filter(x => !personelVar() || x.per === kimId).sort((a, b) => b.ts.localeCompare(a.ts))[0];
+  const bas = son ? son.ts : bugun() + "T00:00:00";
+  const L = A().islem.filter(i => i.odendi && i.toplam && (i.odemeTs || i.ts) > bas && (i.odemeTs || i.ts) <= simdi && (!personelVar() || kasaAlan(i) === kimId));
+  const tur = {}; L.forEach(i => { const k = i.odeme || "Diğer"; tur[k] = (tur[k] || 0) + i.toplam; });
+  const N = L.filter(i => nakitMi(i.odeme));
+  return {son, bas, L, tur, nakit: N.reduce((s, i) => s + i.toplam, 0), nakitN: N.length};
+}
+function teslimKart() {
+  const kim = kimSu(), H = teslimHesap(kim.id), L = teslimler().slice().sort((a, b) => b.ts.localeCompare(a.ts));
+  return `<div class="kart" style="display:grid;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🧾 Kasa teslimi</b><span class="kucuk">${H.son ? "son teslim " + esc(gunSaat(H.son.ts)) + ` · <b style="color:${farkRenk(H.son.fark)}">${farkYazi(H.son.fark)}</b>` : "henüz teslim yok"}</span></div>
+    <div class="kucuk">Vardiya ya da gün bitince kasadaki nakit parayı sayıp yazın. Program, olması gereken tutarla karşılaştırır ve eksik ya da fazla varsa gösterir. ${H.son ? "Son teslimden" : "Bugün sabahtan"} bu yana ${personelVar() ? "sizin aldığınız " : ""}nakit: <b>${tl(H.nakit)}</b></div>
+    <button class="btn ince" data-a="kasaTeslim" style="padding:10px">Kasayı say ve teslim et</button></div>
+    ${yon() && L.length ? `<div class="bas">Kasa teslimleri</div><div class="kart liste">${L.slice(0, 10).map(r => `<div class="s" style="cursor:default"><span class="av ${renk(r.perAd)}">${esc(bas(r.perAd))}</span><div class="m"><b>${personelVar() ? esc(r.perAd) + " · " : ""}${esc(gunSaat(r.ts))}</b><small style="white-space:normal">Olması gereken ${tl(r.beklenen)} · sayılan ${tl(r.sayilan)}${r.not ? " · " + esc(r.not) : ""}</small></div><div class="t" style="color:${farkRenk(r.fark)}">${farkYazi(r.fark)}</div></div>`).join("")}</div>` : ""}`;
+}
+function kasaTeslim() {
+  if (!izinVar("kasa teslimi")) return;
+  const kim = kimSu(), H = teslimHesap(kim.id), basP = +(Veri.ayar("kasaBas") || 0);
+  const diger = Object.entries(H.tur).filter(([k]) => !nakitMi(k));
+  perde(`<h3>Kasa teslimi${personelVar() ? " · " + esc(kim.ad) : ""}</h3>
+    <p class="kucuk">Kasadaki nakit parayı sayın ve aşağıya yazın. Program ${H.son ? "son teslimden (" + esc(gunSaat(H.son.ts)) + ")" : "bugün sabahtan"} bu yana ${personelVar() ? "sizin aldığınız" : "alınan"} nakit ödemeleri toplar ve saydığınız parayla karşılaştırır.</p>
+    <div class="kart ayar" style="padding:2px 14px"><div class="s"><div>Nakit alınan ödemeler<small>${H.nakitN} ödeme</small></div><b>${tl(H.nakit)}</b></div>
+      ${diger.map(([k, v]) => `<div class="s"><div>${esc(k)}<small>bankaya geçer, kasaya girmez · yalnız bilgi</small></div><b>${tl(v)}</b></div>`).join("")}</div>
+    <label>Başta kasada olan para (bozukluk)<input class="girdi" id="tBas" inputmode="decimal" value="${basP || ""}" placeholder="0"></label>
+    <p class="kucuk" style="margin-top:-6px">Vardiya başında kasada bırakılan para üstü. Yoksa boş bırakın; program bir sonraki teslimde hatırlar.</p>
+    <div class="kart" style="display:flex;justify-content:space-between;align-items:center"><span>Kasada olması gereken<small class="kucuk" style="display:block">başta olan + nakit ödemeler</small></span><b id="tBek" style="font-size:18px"></b></div>
+    <label>Kasada saydığınız nakit<input class="girdi" id="tSay" inputmode="decimal" placeholder="Saydığınız tutar" style="font-size:20px"></label>
+    <div id="tFark" class="kart" style="text-align:center;font-weight:700"></div>
+    <label>Not (isteğe bağlı)<input class="girdi" id="tNot" placeholder="Örn. 100 ₺ bozukluğa verildi"></label>
+    <button class="btn koyu" id="tK">Teslim et</button><button class="btn ince" data-kapat>Vazgeç</button>`, s => {
+    const bek = () => sayi(s.querySelector("#tBas").value) + H.nakit;
+    const yaz = () => { s.querySelector("#tBek").textContent = tl(bek()); const v = s.querySelector("#tSay").value.trim(), f = s.querySelector("#tFark");
+      if (!v) { f.textContent = "Saydığınız tutarı yazınca fark burada görünür"; f.style.color = "var(--soluk)"; return; }
+      const d = Math.round((sayi(v) - bek()) * 100) / 100; f.textContent = !d ? "✓ Kasa tam" : d < 0 ? "Eksik: " + tl(-d) : "Fazla: " + tl(d); f.style.color = farkRenk(d); };
+    yaz(); s.querySelector("#tBas").oninput = yaz; s.querySelector("#tSay").oninput = yaz; s.querySelector("#tSay").focus();
+    s.querySelector("[data-kapat]").onclick = kapat;
+    s.querySelector("#tK").onclick = async () => {
+      const v = s.querySelector("#tSay").value.trim(); if (!v) return toast("Kasada saydığınız parayı yazın");
+      const b0 = sayi(s.querySelector("#tBas").value), say = sayi(v), fark = Math.round((say - b0 - H.nakit) * 100) / 100;
+      const r = {id: Veri.yeniId(), ts: yerel(new Date()).slice(0, 19), bas: H.bas, per: kim.id, perAd: kim.ad, acilis: b0, nakit: H.nakit, beklenen: b0 + H.nakit, sayilan: say, fark, tur: H.tur, n: H.L.length, not: s.querySelector("#tNot").value.trim()};
+      await Veri.ayarYaz("teslimler", [...teslimler(), r].slice(-500)); await Veri.ayarYaz("kasaBas", b0);
+      teslimSonuc(r); };
+  });
+}
+function teslimMetni(r) {
+  return [`🧾 *Kasa teslimi* · ${Veri.ayar("isletmeAd") || ""}`, `${personelVar() ? r.perAd + " · " : ""}${tr(r.ts)} ${saat(r.ts)}`, "━━━━━━━━━━━━━━",
+    `Başta kasada: ${tl(r.acilis)}`, `Nakit ödemeler: ${tl(r.nakit)}`, `Olması gereken: *${tl(r.beklenen)}*`, `Sayılan: *${tl(r.sayilan)}*`, `Sonuç: *${!r.fark ? "Kasa tam ✓" : r.fark < 0 ? tl(-r.fark) + " eksik" : tl(r.fark) + " fazla"}*`,
+    ...Object.entries(r.tur || {}).filter(([k]) => !nakitMi(k)).map(([k, v]) => `${k}: ${tl(v)} (bilgi)`), ...(r.not ? ["Not: " + r.not] : [])].join("\n");
+}
+function teslimSonuc(r) {
+  const no = waNo(Veri.ayar("isletmeTel"));
+  perde(`<h3 style="color:${farkRenk(r.fark)}">${!r.fark ? "✓ Kasa tam" : r.fark < 0 ? "Kasa " + tl(-r.fark) + " eksik" : "Kasa " + tl(r.fark) + " fazla"}</h3>
+    <div class="kart ayar" style="padding:2px 14px"><div class="s"><div>Olması gereken</div><b>${tl(r.beklenen)}</b></div><div class="s"><div>Sayılan</div><b>${tl(r.sayilan)}</b></div></div>
+    <p class="kucuk">Teslim kaydedildi. Sonraki teslim bu andan itibaren hesaplanır.${yon() ? "" : " Yönetici, Kasa ekranında bu teslimi görür."}</p>
+    ${no ? `<a class="btn ince" href="https://wa.me/${no}?text=${encodeURIComponent(teslimMetni(r))}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">💬 İşletme numarasına WhatsApp'tan gönder</a>` : ""}<button class="btn koyu" data-kapat>Tamam</button>`, s => {
+    s.querySelector("[data-kapat]").onclick = () => { kapat(); ciz(); }; });
+}
+
+// ---------------------------------------------------------------- 1.3.0 depoya sipariş listesi
+function siparisAdaylari() {
+  const t = bugun(), out = [];
+  for (const m of A().malzeme) {
+    const az = m.stokTut && m.sinir > 0 && m.stok <= m.sinir, skt = !!(m.skt && m.skt.length >= 7 && m.skt.slice(0, 7) <= gunEkle(t, 60).slice(0, 7));
+    if (az || skt) out.push({m, az, skt, n: az ? Math.max(m.sinir * 2 - m.stok, 1) : Math.max(+m.sinir || 1, 1)});
+  }
+  return out.sort((a, b) => a.m.ad.localeCompare(b.m.ad, "tr"));
+}
+function siparisListesi() {
+  const L = siparisAdaylari();
+  perde(`<h3>📋 Depoya sipariş listesi</h3><p class="kucuk">Stoğu uyarı sınırına inen ve son kullanma tarihi 2 ay içinde dolan malzemeler burada toplanır. Adetleri değiştirebilir, istemediğinizin işaretini kaldırabilirsiniz. "WhatsApp'tan gönder" deyince depoya hazır sipariş mesajı açılır.</p>
+    ${L.length ? `<div class="kart" style="padding:4px 14px">${L.map((x, k) => `<div class="mal"><label style="display:flex;gap:10px;align-items:center;flex:1;margin:0;font-weight:600"><input type="checkbox" data-sk="${k}" checked style="width:20px;height:20px;flex-shrink:0"><span class="ad">${esc(x.m.ad)}<small>${x.m.stokTut ? "stok " + x.m.stok + (x.m.sinir ? " · uyarı sınırı " + x.m.sinir : "") : ""}${x.skt ? ` · <span class="et e-teh">SKT ${x.m.skt.slice(5, 7)}.${x.m.skt.slice(0, 4)}</span>` : ""}</small></span></label><input class="girdi" data-sn="${k}" inputmode="numeric" value="${x.n}" aria-label="Adet" style="width:72px;padding:8px;text-align:center"></div>`).join("")}</div>`
+      : `<div class="kart bos-durum"><b>Azalan malzeme yok</b>Malzeme ekranında her malzemeye "Bu sayının altında uyar" sınırı yazın; stok o sayıya inince burada listelenir.</div>`}
+    <label>Depo / eczane WhatsApp numarası<input class="girdi" id="sTel" type="tel" inputmode="tel" value="${esc(Veri.ayar("depoTel") || "")}" placeholder="Boş bırakılırsa kişiyi WhatsApp'ta seçersiniz"></label>
+    ${L.length ? `<button class="btn ana" id="sW">💬 WhatsApp'tan gönder</button><button class="btn ince" id="sK">Listeyi kopyala</button>` : ""}<button class="btn ince" data-kapat>Kapat</button>`, s => {
+    s.querySelector("[data-kapat]").onclick = kapat;
+    const metin = () => { const sec = L.map((x, k) => ({x, on: s.querySelector(`[data-sk="${k}"]`).checked, n: Math.round(sayi(s.querySelector(`[data-sn="${k}"]`).value))})).filter(y => y.on && y.n > 0);
+      return sec.length ? [`📋 *Sipariş listesi*`, `${Veri.ayar("isletmeAd") || ""} · ${tr(bugun())}`, "━━━━━━━━━━━━━━", ...sec.map(y => `• ${y.x.m.ad} × ${y.n}`), "━━━━━━━━━━━━━━", `${Veri.ayar("isletmeAd") || ""}${Veri.ayar("isletmeTel") ? " · " + Veri.ayar("isletmeTel") : ""}`].join("\n") : ""; };
+    const sw = s.querySelector("#sW"); if (sw) sw.onclick = async () => { const m = metin(); if (!m) return toast("En az bir malzeme seçin"); const tel = s.querySelector("#sTel").value.trim(); await Veri.ayarYaz("depoTel", tel); const no = waNo(tel); window.open(`https://wa.me/${no}?text=${encodeURIComponent(m)}`, "_blank"); };
+    const sk = s.querySelector("#sK"); if (sk) sk.onclick = async () => { const m = metin(); if (!m) return toast("En az bir malzeme seçin"); try { await navigator.clipboard.writeText(m); toast("Liste kopyalandı"); } catch (e) { toast("Kopyalanamadı"); } };
+  });
+}
+
 // ---------------------------------------------------------------- ekran olayları
 const BAGLA = {
   kurulum(u) {
@@ -657,6 +910,9 @@ const BAGLA = {
     ic.addEventListener("input", e => {
       const id = e.target.id, v = e.target.value;
       if (id === "yAd") { YENI.ad = v; YENI.yeniHasta = false; const alt = ic.querySelector("#yAlt"), g = document.createElement("div"); g.innerHTML = yeniIc(); const yeni = g.querySelector("#yAlt"); if (alt && yeni) alt.innerHTML = yeni.innerHTML; else tazele(); }
+      else if (id === "yKurAd" && YENI.kur) YENI.kur.ad = v; else if (id === "yKurN" && YENI.kur) { const n = parseInt(v, 10); if (n) { YENI.kur.toplam = n; ic.querySelectorAll("[data-kurn]").forEach(x => x.classList.toggle("on", +x.dataset.kurn === n)); } }
+      else if (["yTb", "yTk", "ySeker", "yAtes"].includes(id)) YENI.olcum[{yTb: "tb", yTk: "tk", ySeker: "seker", yAtes: "ates"}[id]] = v;
+      else if (id === "yKTarih") YENI.kontrol = v; else if (id === "yKNot") YENI.kontrolNot = v;
       else if (id === "yNeden") YENI.neden = v; else if (id === "yNot") YENI.not = v; else if (id === "yTel") YENI.tel = v; else if (id === "yTc") YENI.tc = v; else if (id === "yDogum") YENI.dogum = v;
     });
     ic.addEventListener("click", e => {
@@ -669,8 +925,18 @@ const BAGLA = {
       }
       if (b.hasAttribute("data-hdegis")) { YENI.yeniHasta = false; tazele(false); const e = ic.querySelector("#yAd"); if (e) e.focus(); return; }
       if (b.dataset.grup) { YENI.grup = b.dataset.grup; tazele(false); return; }
+      if (b.dataset.hastadan) { const id = b.dataset.hastadan; if (YENI.hastadan[id]) delete YENI.hastadan[id]; else { YENI.hastadan[id] = true; const ym = A().malzeme.find(x => /yapım|enjeksiyon/i.test(x.ad) && !x.stokTut); if (ym && !YENI.adet[ym.id]) { YENI.adet[ym.id] = 1; toast("💊 Hastanın ilacı: stoktan düşmez, ücreti alınmaz · yapım ücreti eklendi"); } else toast("💊 Hastanın ilacı: stoktan düşmez, ücreti alınmaz"); } YENI.tutarElle = null; tazele(false); return; }
+      if (b.hasAttribute("data-kurbasla")) { const ilk = A().malzeme.find(m => YENI.adet[m.id] > 0 && m.stokTut && !/enjektör|seti|branül|turnike|pamuk|flaster/i.test(m.ad)); YENI.kur = {ad: ilk ? ilk.ad.replace(/ (ampul|\d+ ml)$/i, "") + " kürü" : "", toplam: 5, aralik: 1, pesin: false}; tazele(false); return; }
+      if (b.hasAttribute("data-kurkapat")) { YENI.kur = null; tazele(false); return; }
+      if (b.dataset.kurn) { YENI.kur.toplam = +b.dataset.kurn; tazele(false); return; }
+      if (b.dataset.kura) { YENI.kur.aralik = +b.dataset.kura; tazele(false); return; }
+      if (b.dataset.kurp) { YENI.kur.pesin = b.dataset.kurp === "1"; YENI.tutarElle = null; tazele(false); return; }
+      if (b.dataset.kursec) { const h = hastaBul(YENI.hastaId), k = h && (h.kurler || []).find(x => x.id === b.dataset.kursec); if (k) kurDoldur(h, k); tazele(false); return; }
+      if (b.hasAttribute("data-kurcik")) { YENI.kurId = ""; YENI.tutarElle = null; tazele(false); return; }
+      if (b.hasAttribute("data-olcac")) { YENI.olcumAcik = true; tazele(false); const e = ic.querySelector("#yTb"); if (e) e.focus(); return; }
+      if (b.hasAttribute("data-kont")) { const v = b.dataset.kont; YENI.kontrolSec = v === "" ? "" : v === "t" ? "t" : +v; YENI.kontrol = v === "" ? "" : v === "t" ? (YENI.kontrol || gunEkle(bugun(), 3)) : gunEkle(bugun(), +v); tazele(false); return; }
       if (b.dataset.arti) { YENI.adet[b.dataset.arti] = (YENI.adet[b.dataset.arti] || 0) + 1; YENI.tutarElle = null; tazele(false); const m = A().malzeme.find(x => x.id === b.dataset.arti); if (alerjiEslesir(hastaBul(YENI.hastaId), m) && YENI.adet[m.id] === 1) toast("⚠ Dikkat: hastanın alerjisi bu malzemeyle eşleşiyor"); return; }
-      if (b.dataset.eksi) { YENI.adet[b.dataset.eksi] = Math.max(0, (YENI.adet[b.dataset.eksi] || 0) - 1); YENI.tutarElle = null; tazele(false); return; }
+      if (b.dataset.eksi) { YENI.adet[b.dataset.eksi] = Math.max(0, (YENI.adet[b.dataset.eksi] || 0) - 1); if (!YENI.adet[b.dataset.eksi]) delete YENI.hastadan[b.dataset.eksi]; YENI.tutarElle = null; tazele(false); return; }
       if (b.dataset.odeme) { YENI.odeme = b.dataset.odeme; tazele(false); return; }
       if (b.dataset.aynisi) { const i = A().islem.find(x => x.id === b.dataset.aynisi); YENI.adet = {}; (i.kalemler || []).forEach(k => { if (A().malzeme.some(m => m.id === k.malId)) YENI.adet[k.malId] = k.adet; }); YENI.neden = i.neden || ""; YENI.tutarElle = null; tazele(false); toast("Son işlem eklendi · gerekirse değiştirin"); return; }
       if (b.hasAttribute("data-tutar")) {
@@ -787,6 +1053,8 @@ const EYLEM = {
     inp.onchange = async () => { const f = inp.files[0]; if (!f) return; ekipAc(await f.text()); };
     inp.click();
   },
+  kasaTeslim: () => kasaTeslim(),
+  siparis: () => siparisListesi(),
   kilitle() { OTURUM.acik = false; OTURUM.pin = ""; OTURUM.kim = null; kapat(); ciz(); },
   personel() {
     const L = personeller();
@@ -854,7 +1122,7 @@ function personelDuzen(id) {
 }
 const YON_EYLEM = new Set(["isletme", "odeme", "kategori", "google", "driveGeri", "geriyukle", "excel", "kasaWa", "personel"]);
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-git],[data-a],[data-hduz],[data-hyenikart],[data-isl],[data-hf],[data-mg],[data-kd],[data-ha]");
+  const t = e.target.closest("[data-git],[data-a],[data-hduz],[data-hyenikart],[data-isl],[data-hf],[data-mg],[data-kd],[data-ha],[data-kurseans],[data-kurbitir],[data-kontkapat]");
   if (!t || t.closest(".perde") && !t.dataset.a) return;
   if (t.dataset.git !== undefined) {
     if (t.dataset.git.startsWith("yeni")) { if (!izinVar("yeni işlem")) return; yeniSifirla(t.dataset.git.split("/")[1] || ""); }
@@ -864,6 +1132,10 @@ document.addEventListener("click", e => {
   if (t.dataset.a && YON_EYLEM.has(t.dataset.a) && !yon()) return toast("Bunu yalnız yönetici yapabilir");
   if (t.dataset.ha && !yon()) return;
   if (t.dataset.a && EYLEM[t.dataset.a]) { if (t.closest(".perde")) kapat(); return EYLEM[t.dataset.a](); }
+  if (t.dataset.kurseans) { if (!izinVar("yeni işlem")) return; const h = hastaBul(t.dataset.h), k = h && (h.kurler || []).find(x => x.id === t.dataset.kurseans); if (!k) return; yeniSifirla(h.id); kurDoldur(h, k); return git("yeni"); }
+  if (t.dataset.kurbitir) { const h = hastaBul(t.dataset.h), k = h && (h.kurler || []).find(x => x.id === t.dataset.kurbitir); if (!k || !izinVar("kür değişikliği")) return;
+    return onay(`${k.ad} erken bitirilsin mi? Yapılan seanslar kayıtlı kalır, ana sayfada artık hatırlatılmaz.`, async () => { k.kapandi = yerel(new Date()).slice(0, 19); await Veri.kaydet("hasta", h); toast("Kür bitirildi"); ciz(); }); }
+  if (t.dataset.kontkapat) { const i = A().islem.find(x => x.id === t.dataset.kontkapat); if (!i || !izinVar("kontrol kapatma")) return; i.kontrolKapandi = true; Veri.kaydet("islem", i).then(() => { toast("Kontrol kapatıldı"); ciz(); }); return; }
   if (t.dataset.hduz) return hastaDuzenle(t.dataset.hduz);
   if (t.hasAttribute("data-hyenikart")) return hastaDuzenle("");
   if (t.dataset.isl) return islemDetay(t.dataset.isl);
