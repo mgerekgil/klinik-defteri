@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.3.0";
+const SURUM = "1.3.1";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -715,10 +715,11 @@ function yeniEkler(h) {
       <div class="ikili-g"><label>Şeker (mg/dL)<input class="girdi" id="ySeker" inputmode="decimal" value="${esc(O.seker)}" placeholder="Örn. 110"></label><label>Ateş (°C)<input class="girdi" id="yAtes" inputmode="decimal" value="${esc(O.ates)}" placeholder="Örn. 36,8"></label></div></div>`;
   } else s += `<button class="btn ince" data-olcac style="padding:10px;font-size:14.5px">🩺 Ölçüm ekle (tansiyon, şeker, ateş)</button>`;
   const ks = YENI.kontrolSec;
-  s += `<div class="kucuk" style="font-weight:700;margin:2px 2px -4px">📅 Kontrol · hasta tekrar gelecek mi?</div>
+  s += `<div class="kart" style="display:grid;gap:10px"><b>📅 Kontrol <span class="kucuk" style="font-weight:400">· hasta tekrar gelecek mi?</span></b>
     <div class="cips">${[["", "Kontrol yok"], [3, "3 gün sonra"], [7, "1 hafta"], [30, "1 ay"], ["t", "Tarih seç"]].map(([v, t]) => `<button class="cip ${String(ks) === String(v) ? "on" : ""}" data-kont="${v}">${t}</button>`).join("")}</div>
-    ${ks !== "" ? `<div class="ikili-g">${ks === "t" ? `<label>Tarih<input class="girdi" type="date" id="yKTarih" min="${bugun()}" value="${esc(YENI.kontrol)}"></label>` : `<div class="kucuk" style="align-self:end;padding-bottom:12px">Tarih: <b>${esc(gunYazi(YENI.kontrol))}</b></div>`}<label>Ne için<input class="girdi" id="yKNot" value="${esc(YENI.kontrolNot)}" placeholder="Örn. pansuman kontrolü"></label></div>
-      <p class="kucuk" style="margin:-4px 2px 0">O gün hasta ana sayfada "Bugün gelmesi gerekenler"de çıkar; tek dokunuşla WhatsApp hatırlatması gönderilir.</p>` : ""}`;
+    ${ks !== "" ? `${ks === "t" ? `<label>Tarih<input class="girdi" type="date" id="yKTarih" min="${bugun()}" value="${esc(YENI.kontrol)}"></label>` : `<div class="kucuk">Kontrol günü: <b>${esc(gunYazi(YENI.kontrol))}</b></div>`}
+      <label>Ne için<input class="girdi" id="yKNot" value="${esc(YENI.kontrolNot)}" placeholder="Örn. pansuman kontrolü"></label>
+      <p class="kucuk" style="margin:0">O gün hasta ana sayfada "Bugün gelmesi gerekenler"de çıkar; tek dokunuşla WhatsApp hatırlatması gönderilir.</p>` : ""}</div>`;
   return s;
 }
 
