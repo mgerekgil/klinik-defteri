@@ -1,6 +1,6 @@
 /* Klinik Defteri — ekranlar. Veriler yalnız bu telefonda (veri.js), lisans lisans.js'te. */
 "use strict";
-const SURUM = "1.3.1";
+const SURUM = "1.4.0";
 const SATICI_TEL = "905309469947";
 const GOOGLE_CLIENT_ID = "1044147751394-qo809o3sndht657dcbr8cprj3m2s96dt.apps.googleusercontent.com";      // Google ile bağla (isteğe bağlı) · Drive'da yalnız bu programın klasörü
 const VARSAYILAN_GRUP = ["Serum", "İlaç / ampul", "Enjektör", "Sarf", "Hizmet"];
@@ -275,6 +275,7 @@ function ciz() {
   const u = $("#uyg");
   if (!Veri.ayar("kurulum")) { u.innerHTML = kurulumEkrani(); return BAGLA.kurulum(u); }
   if (!OTURUM.acik) return kilitEkrani(u);
+  if (OTURUM.durum && !OTURUM.durum.acik) return lisansEkrani(u);          // 1.4.0: lisanssız (deneme dışı) kullanım yok, kayıtlar da görünmez
   const [y, p] = YOL();
   const E = {ana: anaEkran, yeni: yeniEkran, hasta: hastaEkran, hastalar: hastalarEkran, malzeme: p ? malzemeEkran : malzemelerEkran, kasa: kasaEkran, ayarlar: ayarlarEkran}[y] || anaEkran;
   u.innerHTML = E(p);
@@ -885,6 +886,18 @@ function siparisListesi() {
     const sw = s.querySelector("#sW"); if (sw) sw.onclick = async () => { const m = metin(); if (!m) return toast("En az bir malzeme seçin"); const tel = s.querySelector("#sTel").value.trim(); await Veri.ayarYaz("depoTel", tel); const no = waNo(tel); window.open(`https://wa.me/${no}?text=${encodeURIComponent(m)}`, "_blank"); };
     const sk = s.querySelector("#sK"); if (sk) sk.onclick = async () => { const m = metin(); if (!m) return toast("En az bir malzeme seçin"); try { await navigator.clipboard.writeText(m); toast("Liste kopyalandı"); } catch (e) { toast("Kopyalanamadı"); } };
   });
+}
+
+// ---------------------------------------------------------------- 1.4.0 lisans yok: program açılmaz (deneme hariç); kayıtlar silinmez, lisans gelince kaldığı yerden devam eder
+function lisansEkrani(u) {
+  const d = OTURUM.durum || {};
+  u.innerHTML = `<main class="kilit" style="gap:14px;padding:24px"><div class="logo">🔒</div><div><b style="font-size:21px">${esc(d.yaz || "Lisans gerekli")}</b>
+    <div class="kucuk" style="margin-top:6px;max-width:340px">Klinik Defteri lisans olmadan kullanılamaz. Kayıtlarınız silinmedi; lisans açılınca her şey kaldığı yerden devam eder.</div></div>
+    <div class="kart" style="max-width:340px;width:100%;text-align:left"><small class="kucuk">Cihaz kodu · satıcıya gönderin</small><div style="font:800 22px ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px;margin-top:4px">${esc(Veri.ayar("cihaz") || "")}</div></div>
+    <button class="btn ana" data-a="saticiya" style="max-width:340px">💬 Satıcıya WhatsApp'tan yaz</button>
+    <button class="btn koyu" data-a="lisansYenile" style="max-width:340px">↻ Lisansı şimdi denetle</button>
+    <button class="btn ince" data-a="kopyala" style="max-width:340px">Cihaz kodunu kopyala</button>
+    <button class="btn ince" data-a="yedek" style="max-width:340px">💾 Kayıtlarımın yedeğini al</button></main>`;
 }
 
 // ---------------------------------------------------------------- ekran olayları
