@@ -1,4 +1,4 @@
-/* Klinik Defteri — Google ile bağla (isteğe bağlı). Kullanıcının KENDİ Drive'ında, yalnız bu programın görebildiği gizli klasöre (appDataFolder)
+/* Esnaf Klinik Mobil — Google ile bağla (isteğe bağlı). Kullanıcının KENDİ Drive'ında, yalnız bu programın görebildiği gizli klasöre (appDataFolder)
    iki dosya yazılır: kimlik.json (cihaz kodu + yedek gizi) ve yedek.kdy (şifreli yedek). Bizim sunucumuz yok; hasta verisi bize hiç gelmez. */
 "use strict";
 const Google = (() => {

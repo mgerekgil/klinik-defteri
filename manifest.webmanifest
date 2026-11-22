@@ -1,6 +1,6 @@
 {
-  "name": "Klinik Defteri",
-  "short_name": "Klinik Defteri",
+  "name": "Esnaf Klinik Mobil",
+  "short_name": "Esnaf Klinik",
   "description": "Hasta, işlem, malzeme ve kasa defteri. Veriler telefonda.",
   "lang": "tr",
   "start_url": "./#ana",

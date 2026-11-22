@@ -1,4 +1,4 @@
-/* Klinik Defteri — ekip (birden fazla telefon). Vardiya sonunda "Defteri paylaş" → WhatsApp → karşı telefonda "Birleştir".
+/* Esnaf Klinik Mobil — ekip (birden fazla telefon). Vardiya sonunda "Defteri paylaş" → WhatsApp → karşı telefonda "Birleştir".
    Kayıtlar kimlikleriyle eşleşir: aynı kayıt bir kez kalır, yeni kayıtlar eklenir, aynı kayıt iki tarafta değiştiyse son değişiklik geçer,
    silinen kayıt geri gelmez. Aynı adlı malzemeler tek malzeme sayılır; aynı adlı hastalar için "aynı kişi mi?" sorulur.
    Dosya ortak "klinik şifresi" ile şifrelenir (AES-GCM, PBKDF2) — Android ve iPhone'da aynı. */
@@ -21,8 +21,8 @@ const Ekip = (() => {
     return JSON.stringify({tur: "KlinikDefteriPaylasim", v: 1, tarih: veri.tarih, isletme: veri.isletme, cihaz: veri.cihaz, hasta: M.hasta.length, islem: M.islem.length, s: b64(tuz), iv: b64(iv), c: b64(c)});
   }
   async function ac(metin, sifre) {
-    let y; try { y = JSON.parse(metin); } catch (e) { throw new Error("Bu dosya Klinik Defteri paylaşım dosyası değil"); }
-    if (y.tur !== "KlinikDefteriPaylasim") throw new Error(y.tur === "KlinikDefteriYedekSifreli" ? "Bu bir yedek dosyası: Ayarlar → Yedekten geri yükle ile açın. Birleştirmek için karşı telefonda \"Defteri paylaş\" kullanın." : "Bu dosya Klinik Defteri paylaşım dosyası değil");
+    let y; try { y = JSON.parse(metin); } catch (e) { throw new Error("Bu dosya Esnaf Klinik Mobil paylaşım dosyası değil"); }
+    if (y.tur !== "KlinikDefteriPaylasim") throw new Error(y.tur === "KlinikDefteriYedekSifreli" ? "Bu bir yedek dosyası: Ayarlar → Yedekten geri yükle ile açın. Birleştirmek için karşı telefonda \"Defteri paylaş\" kullanın." : "Bu dosya Esnaf Klinik Mobil paylaşım dosyası değil");
     try { return JSON.parse(dec.decode(await crypto.subtle.decrypt({name: "AES-GCM", iv: unb64(y.iv)}, await anahtar(sifre, unb64(y.s)), unb64(y.c)))); }
     catch (e) { throw new Error("Klinik şifresi yanlış: iki telefonda Ayarlar → Ekip → Klinik şifresi aynı olmalı"); }
   }

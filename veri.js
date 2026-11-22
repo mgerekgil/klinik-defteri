@@ -1,4 +1,4 @@
-/* Klinik Defteri — veri katmanı. Her şey bu telefonda (IndexedDB). Açılışta belleğe alınır, her değişiklik hemen yazılır.
+/* Esnaf Klinik Mobil — veri katmanı. Her şey bu telefonda (IndexedDB). Açılışta belleğe alınır, her değişiklik hemen yazılır.
    1.1.0: her kayıtta değişiklik zamanı (d), silinenler listesi (birleştirmede geri gelmesin), stok hareketleri (hareket deposu). */
 "use strict";
 const Veri = (() => {
@@ -49,7 +49,7 @@ const Veri = (() => {
     },
     disaAl() { return {tur: "KlinikDefteriYedek", v: 2, tarih: simdi(), ayar: M.ayar, hasta: M.hasta, islem: M.islem, malzeme: M.malzeme, hareket: M.hareket}; },
     async iceAl(y) {
-      if (!y || y.tur !== "KlinikDefteriYedek") throw new Error("Bu dosya Klinik Defteri yedeği değil");
+      if (!y || y.tur !== "KlinikDefteriYedek") throw new Error("Bu dosya Esnaf Klinik Mobil yedeği değil");
       for (const s of ["ayar", ...KAYIT]) await temizle(s);
       const kal = {cihaz: M.ayar.cihaz, ilk: M.ayar.ilk, liste: M.ayar.liste};          // bu telefonun lisans kimliği yedekle değişmez
       M.ayar = {};
